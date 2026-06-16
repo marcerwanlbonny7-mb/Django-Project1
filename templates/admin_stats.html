@@ -1,0 +1,82 @@
+{% extends 'base.html' %}{% load static %}
+{% block title %}Statistiques{% endblock %}
+{% block page_title %}Tableau de bord administrateur{% endblock %}
+{% block content %}
+{% with active='admin_stats' %}{% endwith %}
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3"><div class="card stat-card"><div class="icon text-primary"><i class="bi bi-files"></i></div><div class="value" id="ad-total">-</div><div class="label">Total demandes</div></div></div>
+  <div class="col-md-3"><div class="card stat-card"><div class="icon text-success"><i class="bi bi-check-circle"></i></div><div class="value" id="ad-taux">-</div><div class="label">Taux recouvrement</div></div></div>
+  <div class="col-md-3"><div class="card stat-card"><div class="icon text-warning"><i class="bi bi-shield"></i></div><div class="value" id="ad-assurances">-</div><div class="label">Assurances actives</div></div></div>
+  <div class="col-md-3"><div class="card stat-card"><div class="icon text-info"><i class="bi bi-chat"></i></div><div class="value" id="ad-chat">-</div><div class="label">Conversations ouvertes</div></div></div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card"><div class="card-header">Demandes par statut</div>
+      <div class="card-body" id="ad-statuts"><p class="text-muted">Chargement...</p></div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card"><div class="card-header">Filtres</div>
+      <div class="card-body">
+        <form id="filter-form" class="row g-2">
+          <div class="col-6"><label class="form-label small">Date début</label><input type="date" class="form-control" id="f-date-debut"></div>
+          <div class="col-6"><label class="form-label small">Date fin</label><input type="date" class="form-control" id="f-date-fin"></div>
+          <div class="col-6"><label class="form-label small">Agent</label><input type="number" class="form-control" id="f-agent" placeholder="ID agent"></div>
+          <div class="col-6"><label class="form-label small">Région</label><input type="text" class="form-control" id="f-region" placeholder="Région"></div>
+          <div class="col-12"><button type="submit" class="btn btn-primary w-100">Appliquer filtres</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mt-3">
+  <div class="card-header">Récapitulatif financier</div>
+  <div class="card-body">
+    <div class="row g-3 text-center">
+      <div class="col-4"><h4 id="ad-total-du">-</h4><small class="text-muted">Total dû</small></div>
+      <div class="col-4"><h4 id="ad-total-paye">-</h4><small class="text-muted">Total payé</small></div>
+      <div class="col-4"><h4 id="ad-taux-recouvrement">-</h4><small class="text-muted">Taux de recouvrement</small></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadStats(params = '') {
+  try {
+    const stats = await API.getDashboardStats(params);
+    document.getElementById('ad-total').textContent = stats.total_demandes;
+    document.getElementById('ad-taux').textContent = stats.taux_recouvrement + '%';
+    document.getElementById('ad-assurances').textContent = stats.souscriptions_actives;
+    document.getElementById('ad-chat').textContent = stats.conversations_ouvertes;
+    document.getElementById('ad-total-du').textContent = formatMoney(stats.total_du);
+    document.getElementById('ad-total-paye').textContent = formatMoney(stats.total_paye);
+    document.getElementById('ad-taux-recouvrement').textContent = stats.taux_recouvrement + '%';
+
+    const container = document.getElementById('ad-statuts');
+    if (!stats.demandes_par_statut.length) { container.innerHTML = '<p class="text-muted mb-0">Aucune donnée</p>'; return; }
+    container.innerHTML = stats.demandes_par_statut.map(d => `
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+        <span>${statutBadge(d.statut)}</span>
+        <strong>${d.count}</strong>
+      </div>
+    `).join('');
+  } catch(e) { document.getElementById('ad-statuts').innerHTML = '<p class="text-danger">Erreur: ' + e.message + '</p>'; }
+}
+
+document.getElementById('filter-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  const params = new URLSearchParams();
+  ['date_debut', 'date_fin', 'agent', 'region'].forEach(f => {
+    const val = document.getElementById('f-' + f.replace(/_/g, '-')).value;
+    if (val) params.set(f, val);
+  });
+  loadStats('?' + params.toString());
+});
+
+loadStats();
+</script>
+{% endblock %}

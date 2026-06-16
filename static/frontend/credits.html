@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Microcrédits — COFINANCE CI</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <button class="hamburger" id="hamburger">&#9776;</button>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand"><h2>COFINANCE CI</h2><span id="sidebar-brand-sub">Microcrédits</span></div>
+      <nav class="sidebar-nav" id="sidebar-nav"></nav>
+      <div class="sidebar-footer">
+        <div class="user-info"><div class="avatar" id="sidebar-avatar">C</div><div class="user-details"><div class="user-name" id="sidebar-name">Utilisateur</div><div class="user-role" id="sidebar-role">Client</div></div></div>
+        <button class="logout-btn" onclick="logout()">&#8678; Déconnexion</button>
+      </div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header"><div><h1>Microcrédits</h1><p class="subtitle" id="page-subtitle">Gérez vos demandes de crédit</p></div><button class="btn btn-accent" id="btn-new-credit" onclick="openModal('credit-modal')">+ Nouvelle demande</button></div>
+      <div class="page-body"><div id="credits-container"><div class="loading-spinner"><div class="spinner"></div></div></div></div>
+    </main>
+  </div>
+  <div class="modal-overlay" id="credit-modal"><div class="modal"><div class="modal-header"><h3>Nouvelle demande de crédit</h3><button class="modal-close">&times;</button></div>
+    <form id="credit-form"><div class="modal-body">
+      <div id="credit-form-error"></div>
+      <div class="form-group"><label for="credit-montant">Montant (FCFA)</label><input type="number" id="credit-montant" min="10000" step="1000" required><div class="error-text"></div></div>
+      <div class="form-group"><label for="credit-duree">Durée (mois)</label><select id="credit-duree" required><option value="">Sélectionnez</option><option value="3">3 mois</option><option value="6">6 mois</option><option value="9">9 mois</option><option value="12">12 mois</option><option value="18">18 mois</option><option value="24">24 mois</option></select><div class="error-text"></div></div>
+      <div class="form-group"><label for="credit-motif">Motif</label><textarea id="credit-motif" required></textarea><div class="error-text"></div></div>
+      <div class="form-group"><label for="credit-justificatif">Justificatif (optionnel)</label><input type="file" id="credit-justificatif" accept=".pdf,.jpg,.png"><div class="help-text">PDF, JPG ou PNG</div></div>
+    </div><div class="modal-footer"><button type="button" class="btn btn-outline" onclick="closeModal('credit-modal')">Annuler</button><button type="submit" class="btn btn-primary" id="credit-submit-btn">Soumettre</button></div></form></div></div>
+
+  <div class="modal-overlay" id="detail-modal"><div class="modal" style="max-width:560px;"><div class="modal-header"><h3>Détail du crédit</h3><button class="modal-close">&times;</button></div><div class="modal-body" id="detail-content"><div class="loading-spinner"><div class="spinner"></div></div></div><div class="modal-footer"><button type="button" class="btn btn-outline" onclick="closeModal('detail-modal')">Fermer</button><button type="button" class="btn btn-primary" onclick="currentCreditId && voirEcheancier(currentCreditId)">Voir l'échéancier</button></div></div></div>
+
+  <div class="modal-overlay" id="echeancier-modal"><div class="modal" style="max-width:640px;"><div class="modal-header"><h3>Échéancier</h3><button class="modal-close">&times;</button></div><div class="modal-body"><div id="echeancier-content"><div class="loading-spinner"><div class="spinner"></div></div></div></div><div class="modal-footer"><button type="button" class="btn btn-outline" onclick="closeModal('echeancier-modal')">Fermer</button></div></div></div>
+
+  <div class="modal-overlay" id="statut-modal"><div class="modal" style="max-width:420px;"><div class="modal-header"><h3>Changer le statut</h3><button class="modal-close">&times;</button></div>
+    <form id="statut-form"><div class="modal-body"><div id="statut-form-error"></div><div class="form-group"><label for="statut-select">Nouveau statut</label><select id="statut-select" required><option value="">Sélectionnez</option><option value="EN_ANALYSE">En analyse</option><option value="APPROUVEE">Approuvée</option><option value="DECAISSEE">Décaissée</option><option value="REJETEE">Rejetée</option></select></div></div><div class="modal-footer"><button type="button" class="btn btn-outline" onclick="closeModal('statut-modal')">Annuler</button><button type="submit" class="btn btn-primary" id="statut-submit-btn">Confirmer</button></div></form></div></div>
+
+  <script src="js/auth.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/utils.js"></script>
+  <script>
+    let isClient = true, currentCreditId = null, selectedCreditIdForStatut = null;
+    const clientNav = [
+      { h: 'dashboard_client.html', i: '&#9673;', l: 'Tableau de bord' },
+      { h: 'credits.html', i: '&#9733;', l: 'Mes Crédits', a: true },
+      { h: 'remboursements.html', i: '&#8635;', l: 'Remboursements' },
+      { h: 'assurances.html', i: '&#9724;', l: 'Assurances' },
+      { h: 'notifications.html', i: '&#9881;', l: 'Notifications' },
+      { h: 'chat.html', i: '&#9993;', l: 'Chat' },
+    ];
+    const adminNav = [
+      { h: 'dashboard_admin.html', i: '&#9673;', l: 'Tableau de bord' },
+      { h: 'credits.html', i: '&#9733;', l: 'Demandes', a: true },
+      { h: 'remboursements.html', i: '&#8635;', l: 'Remboursements' },
+      { h: 'assurances.html', i: '&#9724;', l: 'Assurances' },
+      { h: 'notifications.html', i: '&#9881;', l: 'Notifications' },
+      { h: 'chat.html', i: '&#9993;', l: 'Conversations' },
+    ];
+    document.addEventListener('DOMContentLoaded', async function () {
+      checkAuth(); isClient = getUserRole() === 'CLIENT';
+      const name = getUserName(); document.getElementById('sidebar-avatar').textContent = name.charAt(0).toUpperCase();
+      document.getElementById('sidebar-name').textContent = name;
+      document.getElementById('sidebar-role').textContent = isClient ? 'Client' : (getUserRole() === 'ADMIN' ? 'Administrateur' : 'Agent');
+      document.getElementById('sidebar-brand-sub').textContent = isClient ? 'Espace Client' : 'Administration';
+      const nav = document.getElementById('sidebar-nav');
+      const items = isClient ? clientNav : adminNav;
+      nav.innerHTML = items.map(item => `<a href="${item.h}"${item.a ? ' class="active"' : ''}><span class="icon">${item.i}</span> ${item.l}</a>`).join('');
+      document.getElementById('btn-new-credit').style.display = isClient ? 'inline-flex' : 'none';
+      if (!isClient) document.getElementById('page-subtitle').textContent = 'Gérez toutes les demandes';
+      await loadCredits();
+    });
+    document.getElementById('credit-form').addEventListener('submit', async function (e) {
+      e.preventDefault(); clearErrors();
+      const btn = document.getElementById('credit-submit-btn'); btn.disabled = true; btn.innerHTML = '<span class="loading-inline"><span class="spinner-small"></span> Envoi...</span>';
+      const montant = document.getElementById('credit-montant').value, duree_mois = document.getElementById('credit-duree').value, motif = document.getElementById('credit-motif').value.trim();
+      if (!montant || montant < 10000) { showFieldError('credit-montant', 'Minimum 10 000 FCFA'); btn.disabled = false; btn.textContent = 'Soumettre'; return; }
+      if (!duree_mois) { showFieldError('credit-duree', 'Sélectionnez une durée'); btn.disabled = false; btn.textContent = 'Soumettre'; return; }
+      if (!motif) { showFieldError('credit-motif', 'Décrivez le motif'); btn.disabled = false; btn.textContent = 'Soumettre'; return; }
+      try {
+        const justif = document.getElementById('credit-justificatif').files[0];
+        if (justif) { const fd = new FormData(); fd.append('montant', montant); fd.append('duree_mois', duree_mois); fd.append('motif', motif); fd.append('pieces_justificatives', justif); await apiPost('/api/credits/', fd); }
+        else await apiPost('/api/credits/', { montant: parseInt(montant), duree_mois: parseInt(duree_mois), motif });
+        showToast('Demande soumise', 'success'); closeModal('credit-modal'); document.getElementById('credit-form').reset(); await loadCredits();
+      } catch (e) { document.getElementById('credit-form-error').innerHTML = `<div class="alert alert-danger">${sanitize(e.message)}</div>`; }
+      finally { btn.disabled = false; btn.textContent = 'Soumettre'; }
+    });
+    document.getElementById('statut-form').addEventListener('submit', async function (e) {
+      e.preventDefault(); if (!selectedCreditIdForStatut) return;
+      const statut = document.getElementById('statut-select').value;
+      if (!statut) { showToast('Sélectionnez un statut', 'error'); return; }
+      const btn = document.getElementById('statut-submit-btn'); btn.disabled = true; btn.innerHTML = '<span class="loading-inline"><span class="spinner-small"></span>...</span>';
+      try { await apiPatch(`/api/credits/${selectedCreditIdForStatut}/statut/`, { statut }); showToast('Statut mis à jour', 'success'); closeModal('statut-modal'); await loadCredits(); } catch (e) { document.getElementById('statut-form-error').innerHTML = `<div class="alert alert-danger">${sanitize(e.message)}</div>`; }
+      finally { btn.disabled = false; btn.textContent = 'Confirmer'; }
+    });
+    async function loadCredits() {
+      const container = document.getElementById('credits-container'); container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
+      try {
+        const credits = await apiGet('/api/credits/');
+        if (!credits.length) { container.innerHTML = '<div class="empty-state"><div class="icon">&#9733;</div><h3>Aucune demande</h3></div>'; return; }
+        container.innerHTML = '<div class="table-container"><table><thead><tr>' + (!isClient ? '<th>Client</th>' : '') + '<th>Montant</th><th>Durée</th><th>Motif</th><th>Date</th><th>Statut</th>' + (!isClient ? '<th>Score</th>' : '') + '<th>Actions</th></tr></thead><tbody>' +
+          credits.map(c => `<tr>${!isClient ? `<td>${sanitize(c.client_nom || c.client_username || c.client || '-')}</td>` : ''}<td><strong>${formatCurrency(c.montant)}</strong></td><td>${c.duree_mois || '-'} mois</td><td class="truncate" style="max-width:150px;">${sanitize(c.motif || '-')}</td><td>${formatDate(c.date_soumission || c.created_at)}</td><td><span class="statut ${statutClass(c.statut)}">${statutLabel(c.statut)}</span></td>${!isClient ? `<td>${c.score_eligibilite != null ? c.score_eligibilite + '%' : '-'}</td>` : ''}<td><button class="btn btn-sm btn-outline" onclick="voirDetail(${c.id})">Détail</button>${!isClient ? `<button class="btn btn-sm btn-outline" onclick="openStatutModal(${c.id})" style="margin-left:4px;">Statut</button>` : ''}</td></tr>`).join('') +
+          '</tbody></table></div>';
+      } catch (e) { container.innerHTML = `<div class="alert alert-danger">${sanitize(e.message)}</div>`; }
+    }
+    async function voirDetail(id) {
+      currentCreditId = id; const container = document.getElementById('detail-content'); container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>'; openModal('detail-modal');
+      try {
+        const c = await apiGet(`/api/credits/${id}/`);
+        container.innerHTML = `<div style="display:grid;gap:12px;">
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gray-200);"><span class="text-muted">Montant</span><strong>${formatCurrency(c.montant)}</strong></div>
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gray-200);"><span class="text-muted">Durée</span><strong>${c.duree_mois || '-'} mois</strong></div>
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gray-200);"><span class="text-muted">Motif</span><strong>${sanitize(c.motif || '-')}</strong></div>
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gray-200);"><span class="text-muted">Statut</span><span class="statut ${statutClass(c.statut)}">${statutLabel(c.statut)}</span></div>
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--gray-200);"><span class="text-muted">Date</span><strong>${formatDate(c.date_soumission || c.created_at)}</strong></div>
+          ${c.score_eligibilite != null ? `<div style="display:flex;justify-content:space-between;padding:8px 0;"><span class="text-muted">Score</span><strong>${c.score_eligibilite}%</strong></div>` : ''}</div>`;
+      } catch (e) { container.innerHTML = `<div class="alert alert-danger">${sanitize(e.message)}</div>`; }
+    }
+    async function voirEcheancier(id) {
+      closeModal('detail-modal'); const container = document.getElementById('echeancier-content'); container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>'; openModal('echeancier-modal');
+      try {
+        const data = await apiGet(`/api/credits/${id}/echeancier/`);
+        const items = Array.isArray(data) ? data : (data.echeances || data.results || []);
+        if (!items.length) { container.innerHTML = '<div class="text-center text-muted" style="padding:40px;">Aucun échéancier.</div>'; return; }
+        container.innerHTML = '<div class="table-container"><table><thead><tr><th>N°</th><th>Date</th><th>Montant</th><th>Statut</th></tr></thead><tbody>' +
+          items.map((e, i) => `<tr><td>${i+1}</td><td>${formatDate(e.date_echeance || e.date)}</td><td>${formatCurrency(e.montant)}</td><td><span class="statut ${statutClass(e.statut || 'EN_ATTENTE')}">${statutLabel(e.statut || 'EN_ATTENTE')}</span></td></tr>`).join('') + '</tbody></table></div>';
+      } catch (e) { container.innerHTML = `<div class="alert alert-danger">${sanitize(e.message)}</div>`; }
+    }
+    function openStatutModal(id) { selectedCreditIdForStatut = id; document.getElementById('statut-select').value = ''; document.getElementById('statut-form-error').innerHTML = ''; openModal('statut-modal'); }
+  </script>
+</body>
+</html>

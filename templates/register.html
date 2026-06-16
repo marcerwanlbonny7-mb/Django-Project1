@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block title %}Inscription{% endblock %}
+{% block auth_content %}
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="logo">
+      <i class="bi bi-shield-check" style="font-size:48px;color:#1a237e"></i>
+      <h1>COFINANCE CI</h1>
+      <p>Créer un compte client</p>
+    </div>
+    <form id="register-form">
+      <div class="alert alert-danger d-none" id="register-error"></div>
+      <div class="mb-3">
+        <label class="form-label">Nom d'utilisateur</label>
+        <input type="text" class="form-control" id="reg-username" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-control" id="reg-email" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Téléphone</label>
+        <input type="text" class="form-control" id="reg-phone">
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Région</label>
+        <input type="text" class="form-control" id="reg-region">
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Mot de passe (min 8 car.)</label>
+        <input type="password" class="form-control" id="reg-password" minlength="8" required>
+      </div>
+      <button type="submit" class="btn btn-success w-100 py-2" id="register-btn">Créer mon compte</button>
+    </form>
+    <p class="text-center mt-3 mb-0">
+      <a href="/login/" class="text-decoration-none">Déjà un compte ? Se connecter</a>
+    </p>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('register-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('register-btn');
+  btn.disabled = true; btn.textContent = 'Inscription...';
+  try {
+    await API.register({
+      username: document.getElementById('reg-username').value,
+      email: document.getElementById('reg-email').value,
+      phone: document.getElementById('reg-phone').value,
+      region: document.getElementById('reg-region').value,
+      password: document.getElementById('reg-password').value,
+    });
+    alert('Compte créé avec succès. Vous pouvez maintenant vous connecter.');
+    window.location.href = '/login/';
+  } catch(err) {
+    const el = document.getElementById('register-error');
+    el.textContent = err.message;
+    el.classList.remove('d-none');
+    btn.disabled = false; btn.textContent = 'Créer mon compte';
+  }
+});
+</script>
+{% endblock %}

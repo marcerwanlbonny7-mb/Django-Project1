@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat — COFINANCE CI</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <button class="hamburger" id="hamburger">&#9776;</button>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand"><h2>COFINANCE CI</h2><span>Chat</span></div>
+      <nav class="sidebar-nav" id="sidebar-nav"></nav>
+      <div class="sidebar-footer">
+        <div class="user-info"><div class="avatar" id="sidebar-avatar">C</div><div class="user-details"><div class="user-name" id="sidebar-name">Utilisateur</div><div class="user-role" id="sidebar-role">Client</div></div></div>
+        <button class="logout-btn" onclick="logout()">&#8678; Déconnexion</button>
+      </div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header"><div><h1>Chat</h1><p class="subtitle">Messagerie temps réel</p></div><button class="btn btn-accent btn-sm" id="btn-new-conv" onclick="ouvrirNouvelleConversation()">+ Nouvelle conversation</button></div>
+      <div class="page-body" style="padding-top:0;">
+        <div class="chat-layout">
+          <div class="chat-sidebar">
+            <div class="chat-sidebar-header"><h3 style="font-size:0.9rem;font-weight:600;">Conversations</h3></div>
+            <div class="chat-sidebar-list" id="conversations-list"><div class="loading-spinner"><div class="spinner"></div></div></div>
+          </div>
+          <div class="chat-main" id="chat-main-area">
+            <div id="chat-empty" class="chat-empty"><div class="icon">&#128172;</div><h3>Sélectionnez une conversation</h3><p>Choisissez une conversation dans la liste.</p></div>
+            <div id="chat-active" style="display:none;flex-direction:column;height:100%;">
+              <div class="chat-header">
+                <div><div class="chat-partner" id="chat-partner-name">Agent</div>
+                  <div class="presence-indicator"><span class="presence-dot offline" id="presence-dot"></span><span id="presence-text">Hors ligne</span></div>
+                </div>
+                <span class="text-muted" style="font-size:0.75rem;" id="chat-status-badge">En cours</span>
+              </div>
+              <div class="chat-messages" id="chat-messages"></div>
+              <div class="typing-indicator" id="typing-indicator"><span id="typing-name">Agent</span> est en train d'écrire <span class="typing-dots"><span></span><span></span><span></span></span></div>
+              <div class="chat-input-area"><input type="text" id="chat-input" placeholder="Tapez votre message..." autocomplete="off"><button class="btn btn-primary" id="chat-send-btn" onclick="envoyerMessage()">&#10148;</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="js/auth.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/utils.js"></script>
+  <script>
+    let isClient = true, currentUser = '', currentConversationId = null, ws = null, wsReconnectTimer = null, typingTimer = null;
+    const clientNav = [{h:'dashboard_client.html',i:'&#9673;',l:'Tableau de bord'},{h:'credits.html',i:'&#9733;',l:'Mes Crédits'},{h:'remboursements.html',i:'&#8635;',l:'Remboursements'},{h:'assurances.html',i:'&#9724;',l:'Assurances'},{h:'notifications.html',i:'&#9881;',l:'Notifications'},{h:'chat.html',i:'&#9993;',l:'Chat',a:true}];
+    const adminNav = [{h:'dashboard_admin.html',i:'&#9673;',l:'Tableau de bord'},{h:'credits.html',i:'&#9733;',l:'Demandes'},{h:'remboursements.html',i:'&#8635;',l:'Remboursements'},{h:'assurances.html',i:'&#9724;',l:'Assurances'},{h:'notifications.html',i:'&#9881;',l:'Notifications'},{h:'chat.html',i:'&#9993;',l:'Conversations',a:true}];
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      checkAuth(); const role = getUserRole(); isClient = role === 'CLIENT'; currentUser = getUserName();
+      document.getElementById('sidebar-avatar').textContent = currentUser.charAt(0).toUpperCase();
+      document.getElementById('sidebar-name').textContent = currentUser;
+      document.getElementById('sidebar-role').textContent = isClient ? 'Client' : (role==='ADMIN'?'Administrateur':'Agent');
+      document.getElementById('btn-new-conv').style.display = isClient ? 'inline-flex' : 'none';
+      document.getElementById('sidebar-nav').innerHTML = (isClient ? clientNav : adminNav).map(item => `<a href="${item.h}"${item.a?' class="active"':''}><span class="icon">${item.i}</span> ${item.l}</a>`).join('');
+      await loadConversations();
+    });
+
+    window.addEventListener('beforeunload', function () {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+    });
+
+    async function loadConversations() {
+      const list = document.getElementById('conversations-list'); list.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
+      try {
+        const data = await apiGet('/api/chat/conversations/');
+        const items = Array.isArray(data) ? data : (data.results || data.conversations || []);
+        if (!items.length) { list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--gray-500);font-size:0.85rem;">Aucune conversation</div>'; return; }
+        list.innerHTML = items.map(c => `
+          <div class="chat-conversation-item ${c.id===currentConversationId?'active':''}" onclick="ouvrirConversation(${c.id}, '${sanitize(c.client_nom||c.client_username||c.agent_nom||c.agent_username||'Agent')}', this)">
+            <div class="conv-header"><span class="conv-name">${sanitize(c.client_nom||c.client_username||c.agent_nom||c.agent_username||'Conversation')}</span><span class="conv-time">${formatRelativeTime(c.date_dernier_message||c.updated_at||c.created_at)}</span></div>
+            <div class="conv-preview">${sanitize(c.dernier_message||c.last_message||'Aucun message')}</div>
+          </div>`).join('');
+      } catch (e) { list.innerHTML = `<div class="alert alert-danger">${sanitize(e.message)}</div>`; }
+    }
+
+    async function ouvrirConversation(convId, partnerName, el) {
+      if (ws) { try { ws.close(); } catch (e) {} }
+      if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+      currentConversationId = convId;
+      document.querySelectorAll('.chat-conversation-item').forEach(i => i.classList.remove('active'));
+      if (el) el.classList.add('active');
+      document.getElementById('chat-empty').style.display = 'none';
+      const active = document.getElementById('chat-active'); active.style.display = 'flex';
+      document.getElementById('chat-partner-name').textContent = partnerName;
+      document.getElementById('typing-name').textContent = partnerName;
+      document.getElementById('chat-messages').innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
+      document.getElementById('chat-input').disabled = false; document.getElementById('chat-send-btn').disabled = false;
+      await loadMessages(convId);
+      connectWebSocket(convId);
+    }
+
+    async function loadMessages(convId) {
+      try {
+        const data = await apiGet(`/api/chat/conversations/${convId}/messages/`);
+        const messages = Array.isArray(data) ? data : (data.results || data.messages || []);
+        afficherMessages(messages);
+      } catch (e) { document.getElementById('chat-messages').innerHTML = `<div class="alert alert-danger">${sanitize(e.message)}</div>`; }
+    }
+
+    function afficherMessages(messages) {
+      const container = document.getElementById('chat-messages');
+      if (!messages || !messages.length) { container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--gray-500);font-size:0.85rem;">Aucun message. Envoyez le premier message !</div>'; return; }
+      container.innerHTML = messages.map(m => {
+        const isMine = m.auteur === currentUser || m.expediteur === currentUser || m.sender === currentUser;
+        const timestamp = m.timestamp || m.created_at || m.date_envoi || '';
+        return `<div class="message ${isMine?'sent':'received'}"><div>${sanitize(m.message||m.contenu||m.texte||'')}</div><div class="msg-time">${formatTime(timestamp)}</div></div>`;
+      }).join('');
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function formatTime(d) { if (!d) return ''; try { return new Date(d).toLocaleTimeString('fr-CI',{hour:'2-digit',minute:'2-digit'}); } catch { return ''; } }
+
+    function connectWebSocket(convId) {
+      const token = getToken(); if (!token) return;
+      const wsUrl = `ws://127.0.0.1:8000/ws/chat/${convId}/?token=${token}`;
+      ws = new WebSocket(wsUrl);
+      ws.onopen = function () {};
+      ws.onmessage = function (event) {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'typing') {
+            if (data.user !== currentUser) { document.getElementById('typing-indicator').classList.add('visible'); clearTimeout(typingTimer); typingTimer = setTimeout(() => document.getElementById('typing-indicator').classList.remove('visible'), 2000); }
+          } else if (data.type === 'presence') {
+            if (data.username !== currentUser) { const dot = document.getElementById('presence-dot'), txt = document.getElementById('presence-text'); if (data.is_online) { dot.className = 'presence-dot online'; txt.textContent = 'En ligne'; } else { dot.className = 'presence-dot offline'; txt.textContent = 'Hors ligne'; } }
+          } else if (data.contenu) {
+            const container = document.getElementById('chat-messages');
+            const empty = container.querySelector('div[style*="text-align:center"]');
+            if (empty) container.innerHTML = '';
+            const isMine = data.auteur_nom === currentUser;
+            const d = document.createElement('div'); d.className = `message ${isMine?'sent':'received'}`;
+            d.innerHTML = `<div>${sanitize(data.contenu)}</div><div class="msg-time">${formatTime(data.timestamp||new Date().toISOString())}</div>`;
+            container.appendChild(d); container.scrollTop = container.scrollHeight; loadConversations();
+          }
+        } catch (e) {}
+      };
+      ws.onclose = function () {
+        wsReconnectTimer = setTimeout(() => { if (currentConversationId) connectWebSocket(currentConversationId); }, 3000);
+      };
+      ws.onerror = function () {};
+    }
+
+    async function envoyerMessage() {
+      const input = document.getElementById('chat-input'); const message = input.value.trim();
+      if (!message) return;
+      input.value = '';
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({type:'message',contenu:message}));
+      } else {
+        try {
+          const data = await apiPost(`/api/chat/conversations/${currentConversationId}/messages/`, {contenu: message, conversation: currentConversationId});
+          if (data && data.contenu) {
+            const container = document.getElementById('chat-messages');
+            const empty = container.querySelector('div[style*="text-align:center"]');
+            if (empty) container.innerHTML = '';
+            const d = document.createElement('div'); d.className = 'message sent';
+            d.innerHTML = `<div>${sanitize(data.contenu)}</div><div class="msg-time">${formatTime(data.timestamp||new Date().toISOString())}</div>`;
+            container.appendChild(d); container.scrollTop = container.scrollHeight;
+          }
+        } catch (e) { showToast('Erreur: '+e.message, 'error'); }
+      }
+      loadConversations();
+    }
+
+    document.getElementById('chat-input').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); envoyerMessage(); } });
+    document.getElementById('chat-input').addEventListener('input', function () { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type:'typing'})); });
+
+    async function ouvrirNouvelleConversation() {
+      try {
+        const data = await apiPost('/api/chat/conversations/', {});
+        showToast('Nouvelle conversation ouverte', 'success'); await loadConversations();
+        ouvrirConversation(data.id, data.agent_nom||data.agent_username||'Agent', null);
+      } catch (e) { showToast('Erreur: '+e.message, 'error'); }
+    }
+  </script>
+</body>
+</html>

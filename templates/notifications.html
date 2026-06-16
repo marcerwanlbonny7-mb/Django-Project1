@@ -1,0 +1,49 @@
+{% extends 'base.html' %}{% load static %}
+{% block title %}Notifications{% endblock %}
+{% block page_title %}Notifications{% endblock %}
+{% block content %}
+{% with active='notifications' %}{% endwith %}
+<div class="d-flex justify-content-between mb-3">
+  <h5 class="mb-0" id="notif-header">Chargement...</h5>
+  <button class="btn btn-sm btn-outline-primary" onclick="toutLire()"><i class="bi bi-check-all"></i> Tout marquer lu</button>
+</div>
+<div class="card"><div class="card-body p-0" id="notifications-list"></div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadNotifs() {
+  try {
+    const notifs = await API.getNotifications();
+    const unread = notifs.filter(n => !n.lu).length;
+    document.getElementById('notif-header').textContent = `Notifications (${notifs.length} total, ${unread} non lues)`;
+    const container = document.getElementById('notifications-list');
+    if (!notifs.length) { container.innerHTML = '<p class="text-muted p-3 mb-0">Aucune notification</p>'; return; }
+    container.innerHTML = notifs.map(n => `
+      <div class="d-flex justify-content-between align-items-center p-3 border-bottom ${n.lu ? '' : 'bg-light'}">
+        <div class="d-flex align-items-center gap-3">
+          <i class="bi ${n.type === 'CREDIT' ? 'bi-cash-stack text-primary' : n.type === 'REMBOURSEMENT' ? 'bi-arrow-left-right text-success' : n.type === 'ASSURANCE' ? 'bi-shield text-warning' : 'bi-chat-dots text-info'} fs-4"></i>
+          <div>
+            <strong>${n.type}</strong><br>
+            <span>${escapeHtml(n.message)}</span>
+            <br><small class="text-muted">${formatDateTime(n.created_at)}</small>
+          </div>
+        </div>
+        ${n.lu ? '' : `<button class="btn btn-sm btn-outline-secondary" onclick="marquerLu(${n.id})">Marquer lue</button>`}
+      </div>
+    `).join('');
+  } catch(e) { document.getElementById('notifications-list').innerHTML = '<p class="text-danger p-3 mb-0">Erreur</p>'; }
+}
+
+async function marquerLu(id) {
+  try { await API.markNotifRead(id); loadNotifs(); }
+  catch(e) { alert('Erreur'); }
+}
+
+async function toutLire() {
+  try { await API.markAllRead(); loadNotifs(); }
+  catch(e) { alert('Erreur'); }
+}
+
+loadNotifs();
+</script>
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends 'base.html' %}{% load static %}
+{% block title %}Assurances{% endblock %}
+{% block page_title %}Assurances{% endblock %}
+{% block content %}
+{% with active='assurances' %}{% endwith %}
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#catalogue">Catalogue</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#mes-polices">Mes polices</button></li>
+</ul>
+
+<div class="tab-content">
+  <div class="tab-pane fade show active" id="catalogue">
+    <div class="row g-3" id="formules-list"><p class="text-muted">Chargement...</p></div>
+  </div>
+  <div class="tab-pane fade" id="mes-polices">
+    <div class="card"><div class="card-body" id="polices-list"><p class="text-muted">Chargement...</p></div></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadFormules() {
+  try {
+    const formules = await API.getFormules();
+    const container = document.getElementById('formules-list');
+    container.innerHTML = formules.map(f => `
+      <div class="col-md-4"><div class="card h-100">
+        <div class="card-body text-center">
+          <i class="bi bi-shield-check text-primary" style="font-size:40px"></i>
+          <h5 class="mt-2">${escapeHtml(f.nom)}</h5>
+          <p class="text-muted small">${escapeHtml(f.description)}</p>
+          <h3 class="text-primary fw-bold">${formatMoney(f.prix_mensuel)}<small class="text-muted fs-6">/mois</small></h3>
+          <p class="small">${escapeHtml(f.couverture)}</p>
+          ${API.getUser().role === 'CLIENT' ? `<button class="btn btn-primary" onclick="souscrire(${f.id})">Souscrire</button>` : ''}
+        </div>
+      </div></div>
+    `).join('');
+  } catch(e) { document.getElementById('formules-list').innerHTML = '<p class="text-danger">Erreur: ' + e.message + '</p>'; }
+}
+
+async function loadPolices() {
+  try {
+    const polices = await API.getMesPolices();
+    const container = document.getElementById('polices-list');
+    if (!polices.length) { container.innerHTML = '<p class="text-muted mb-0">Aucune souscription</p>'; return; }
+    container.innerHTML = `<div class="table-responsive"><table class="table table-hover"><thead><tr>
+      <th>Formule</th><th>Date début</th><th>Date fin</th><th>Statut</th><th>Actions</th>
+    </tr></thead><tbody>${polices.map(p => `<tr>
+      <td>${escapeHtml(p.formule_nom)}</td>
+      <td>${formatDate(p.date_debut)}</td>
+      <td>${formatDate(p.date_fin)}</td>
+      <td>${statutBadge(p.statut)}</td>
+      <td>${p.statut === 'ACTIVE' ? `<button class="btn btn-sm btn-outline-danger" onclick="resilier(${p.id})">Résilier</button>` : '-'}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+  } catch(e) { document.getElementById('polices-list').innerHTML = '<p class="text-danger">Erreur: ' + e.message + '</p>'; }
+}
+
+async function souscrire(formuleId) {
+  if (!confirm('Confirmer la souscription ?')) return;
+  try {
+    await API.souscrire({ formule: formuleId, date_debut: new Date().toISOString().split('T')[0], date_fin: new Date(Date.now() + 365*86400000).toISOString().split('T')[0] });
+    alert('Souscription réussie !');
+    loadPolices();
+  } catch(e) { alert('Erreur: ' + e.message); }
+}
+
+async function resilier(id) {
+  if (!confirm('Confirmer la résiliation ?')) return;
+  try {
+    await API.resilier(id);
+    loadPolices();
+  } catch(e) { alert('Erreur: ' + e.message); }
+}
+
+document.querySelectorAll('[data-bs-toggle="tab"]').forEach(el => {
+  el.addEventListener('shown.bs.tab', function(e) {
+    if (e.target.dataset.bsTarget === '#mes-polices') loadPolices();
+  });
+});
+
+loadFormules();
+loadPolices();
+</script>
+{% endblock %}

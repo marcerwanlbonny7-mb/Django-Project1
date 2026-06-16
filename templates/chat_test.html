@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat COFINANCE CI — Test WebSocket</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px; }
+        h1 { text-align: center; margin-bottom: 20px; color: #1a237e; }
+        .container { display: flex; gap: 20px; max-width: 1200px; margin: 0 auto; }
+        .panel { flex: 1; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 15px; display: flex; flex-direction: column; }
+        .panel h2 { font-size: 16px; margin-bottom: 10px; color: #333; border-bottom: 2px solid #1a237e; padding-bottom: 8px; }
+        .panel .status { font-size: 12px; padding: 4px 8px; border-radius: 4px; margin-bottom: 10px; display: inline-block; }
+        .status.connected { background: #c8e6c9; color: #2e7d32; }
+        .status.disconnected { background: #ffcdd2; color: #c62828; }
+        .messages { flex: 1; height: 280px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 4px; padding: 10px; margin-bottom: 5px; background: #fafafa; }
+        .message { margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; max-width: 80%; }
+        .message.client { background: #e3f2fd; margin-right: auto; }
+        .message.agent { background: #fce4ec; margin-left: auto; }
+        .message .author { font-size: 11px; font-weight: bold; color: #555; }
+        .message .time { font-size: 10px; color: #999; float: right; }
+        .typing-indicator { font-size: 12px; color: #888; font-style: italic; padding: 2px 10px; height: 18px; }
+        .input-area { display: flex; gap: 8px; }
+        .input-area input { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        .input-area button { padding: 8px 16px; background: #1a237e; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .input-area button:hover { background: #283593; }
+        .info { margin-top: 30px; max-width: 1200px; margin-left: auto; margin-right: auto; background: white; border-radius: 8px; padding: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .info code { background: #eee; padding: 2px 6px; border-radius: 3px; font-size: 13px; }
+        .token-input { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 12px; }
+        .presence-badge { font-size: 11px; padding: 2px 6px; border-radius: 3px; margin-left: 6px; }
+        .presence-online { background: #c8e6c9; color: #2e7d32; }
+        .presence-offline { background: #ffcdd2; color: #c62828; }
+    </style>
+</head>
+<body>
+    <h1>COFINANCE CI — Chat Temps Réel</h1>
+    <div class="container">
+        <div class="panel" id="client-panel">
+            <h2>Client</h2>
+            <span class="status disconnected" id="client-status">Déconnecté</span>
+            <div class="messages" id="client-messages"></div>
+            <div class="typing-indicator" id="client-typing"></div>
+            <div class="input-area">
+                <input type="text" id="client-input" placeholder="Votre message..." disabled>
+                <button id="client-send" disabled>Envoyer</button>
+            </div>
+        </div>
+        <div class="panel" id="agent-panel">
+            <h2>Agent / Admin</h2>
+            <span class="status disconnected" id="agent-status">Déconnecté</span>
+            <div class="messages" id="agent-messages"></div>
+            <div class="typing-indicator" id="agent-typing"></div>
+            <div class="input-area">
+                <input type="text" id="agent-input" placeholder="Votre message..." disabled>
+                <button id="agent-send" disabled>Envoyer</button>
+            </div>
+        </div>
+    </div>
+    <div class="info">
+        <h3>Configuration</h3>
+        <label>Conversation ID : <input type="number" id="conv-id" value="1" style="width:80px"></label>
+        <label>Token Client : <input type="text" id="client-token" class="token-input" placeholder="Token JWT du client"></label>
+        <label>Token Agent : <input type="text" id="agent-token" class="token-input" placeholder="Token JWT de l'agent"></label>
+        <button id="connect-btn" style="padding:8px 20px;background:#1a237e;color:white;border:none;border-radius:4px;cursor:pointer">Connexion</button>
+        <button id="disconnect-btn" style="padding:8px 20px;background:#c62828;color:white;border:none;border-radius:4px;cursor:pointer">Déconnexion</button>
+        <p style="margin-top:10px;font-size:13px;color:#666">
+            Instructions : Entrez les tokens JWT, une Conversation ID valide, puis cliquez "Connexion".
+            Les messages s'afficheront en temps réel dans les deux onglets.
+        </p>
+    </div>
+    <script>
+        let clientWs = null;
+        let agentWs = null;
+        let typingTimeout = null;
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+
+        function getBaseUrl() {
+            return protocol + '//' + window.location.host;
+        }
+
+        function connect() {
+            const convId = document.getElementById('conv-id').value;
+            const clientToken = document.getElementById('client-token').value.trim();
+            const agentToken = document.getElementById('agent-token').value.trim();
+
+            if (!convId || !clientToken || !agentToken) {
+                alert('Veuillez remplir la Conversation ID et les deux tokens.');
+                return;
+            }
+
+            disconnect();
+
+            const url = getBaseUrl() + '/ws/chat/' + convId + '/';
+
+            clientWs = new WebSocket(url);
+            clientWs.onopen = function() {
+                document.getElementById('client-status').textContent = 'Connecté';
+                document.getElementById('client-status').className = 'status connected';
+                document.getElementById('client-input').disabled = false;
+                document.getElementById('client-send').disabled = false;
+            };
+            clientWs.onclose = function() {
+                document.getElementById('client-status').textContent = 'Déconnecté';
+                document.getElementById('client-status').className = 'status disconnected';
+                document.getElementById('client-input').disabled = true;
+                document.getElementById('client-send').disabled = true;
+            };
+            clientWs.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                handleMessage('client-messages', 'client-typing', data, 'client');
+            };
+
+            agentWs = new WebSocket(url);
+            agentWs.onopen = function() {
+                document.getElementById('agent-status').textContent = 'Connecté';
+                document.getElementById('agent-status').className = 'status connected';
+                document.getElementById('agent-input').disabled = false;
+                document.getElementById('agent-send').disabled = false;
+            };
+            agentWs.onclose = function() {
+                document.getElementById('agent-status').textContent = 'Déconnecté';
+                document.getElementById('agent-status').className = 'status disconnected';
+                document.getElementById('agent-input').disabled = true;
+                document.getElementById('agent-send').disabled = true;
+            };
+            agentWs.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                handleMessage('agent-messages', 'agent-typing', data, 'agent');
+            };
+
+            if (clientWs.readyState === WebSocket.OPEN) {
+                clientWs.send(JSON.stringify({ type: 'message', contenu: '[CLIENT CONNECTÉ]' }));
+            }
+            if (agentWs.readyState === WebSocket.OPEN) {
+                agentWs.send(JSON.stringify({ type: 'message', contenu: '[AGENT CONNECTÉ]' }));
+            }
+        }
+
+        function disconnect() {
+            if (clientWs) { clientWs.close(); clientWs = null; }
+            if (agentWs) { agentWs.close(); agentWs = null; }
+        }
+
+        function sendMessage(role) {
+            const prefix = role === 'client' ? 'client' : 'agent';
+            const input = document.getElementById(prefix + '-input');
+            const ws = role === 'client' ? clientWs : agentWs;
+
+            const contenu = input.value.trim();
+            if (!contenu || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+            ws.send(JSON.stringify({ type: 'message', contenu: contenu }));
+            input.value = '';
+        }
+
+        function handleTyping(role) {
+            const prefix = role === 'client' ? 'client' : 'agent';
+            const input = document.getElementById(prefix + '-input');
+            const ws = role === 'client' ? clientWs : agentWs;
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+            if (typingTimeout) clearTimeout(typingTimeout);
+
+            ws.send(JSON.stringify({ type: 'typing', conversation_id: parseInt(document.getElementById('conv-id').value) }));
+
+            typingTimeout = setTimeout(function() {
+                ws.send(JSON.stringify({ type: 'stop_typing', conversation_id: parseInt(document.getElementById('conv-id').value) }));
+            }, 2000);
+        }
+
+        function handleMessage(containerId, typingId, data, side) {
+            const typingEl = document.getElementById(typingId);
+
+            if (data.type === 'typing') {
+                typingEl.textContent = data.user + ' est en train d\'écrire...';
+                return;
+            }
+            if (data.type === 'stop_typing') {
+                typingEl.textContent = '';
+                return;
+            }
+            if (data.type === 'presence') {
+                const panels = document.querySelectorAll('.panel');
+                panels.forEach(function(panel) {
+                    const h2 = panel.querySelector('h2');
+                    if (h2 && h2.textContent.toLowerCase().includes('agent')) {
+                        const badge = h2.querySelector('.presence-badge');
+                        if (data.is_online) {
+                            if (badge) badge.remove();
+                            const el = document.createElement('span');
+                            el.className = 'presence-badge presence-online';
+                            el.textContent = 'En ligne';
+                            h2.appendChild(el);
+                        } else {
+                            if (badge) badge.remove();
+                            const el = document.createElement('span');
+                            el.className = 'presence-badge presence-offline';
+                            el.textContent = 'Hors ligne';
+                            h2.appendChild(el);
+                        }
+                    }
+                });
+                return;
+            }
+
+            if (data.type === 'message' || data.contenu) {
+                typingEl.textContent = '';
+                const container = document.getElementById(containerId);
+                const div = document.createElement('div');
+                div.className = 'message ' + side;
+                const author = data.auteur_nom || 'Inconnu';
+                const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : '';
+                div.innerHTML = '<div class="author">' + author + ' <span class="time">' + time + '</span></div>' + (data.contenu || '');
+                container.appendChild(div);
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        document.getElementById('connect-btn').addEventListener('click', connect);
+        document.getElementById('disconnect-btn').addEventListener('click', disconnect);
+        document.getElementById('client-send').addEventListener('click', function() { sendMessage('client'); });
+        document.getElementById('agent-send').addEventListener('click', function() { sendMessage('agent'); });
+        document.getElementById('client-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') sendMessage('client');
+            else handleTyping('client');
+        });
+        document.getElementById('agent-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') sendMessage('agent');
+            else handleTyping('agent');
+        });
+    </script>
+</body>
+</html>

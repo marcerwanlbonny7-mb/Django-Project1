@@ -1,0 +1,154 @@
+{% extends 'base.html' %}{% load static %}
+{% block title %}Chat{% endblock %}
+{% block page_title %}Chat en direct{% endblock %}
+{% block content %}
+{% with active='chat' %}{% endwith %}
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Conversations</span>
+        <button class="btn btn-sm btn-primary" onclick="nouvelleConversation()"><i class="bi bi-plus-lg"></i></button>
+      </div>
+      <div class="card-body p-0" id="conversations-list" style="max-height:500px;overflow-y:auto">
+        <p class="text-muted p-3 mb-0">Chargement...</p>
+      </div>
+    </div>
+    <div class="card mt-3">
+      <div class="card-header">Agents en ligne</div>
+      <div class="card-body" id="agents-list"><p class="text-muted mb-0">Chargement...</p></div>
+    </div>
+  </div>
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span id="chat-header">Sélectionnez une conversation</span>
+        <span class="badge bg-secondary" id="conv-statut"></span>
+      </div>
+      <div class="card-body">
+        <div class="chat-messages" id="chat-messages">
+          <p class="text-muted text-center">Choisissez une conversation pour commencer</p>
+        </div>
+        <div class="typing-indicator" id="typing-indicator"></div>
+        <div class="input-group mt-2">
+          <input type="text" class="form-control" id="chat-input" placeholder="Votre message..." disabled>
+          <button class="btn btn-primary" id="chat-send" disabled><i class="bi bi-send"></i></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let currentConvId = null;
+let chatWs = null;
+let convList = [];
+let typingTimeout = null;
+
+async function loadConversations() {
+  try {
+    convList = await API.getConversations();
+    const container = document.getElementById('conversations-list');
+    if (!convList.length) { container.innerHTML = '<p class="text-muted p-3 mb-0">Aucune conversation</p>'; return; }
+    container.innerHTML = convList.map(c => `
+      <div class="d-flex justify-content-between align-items-center p-3 border-bottom ${c.id === currentConvId ? 'bg-light' : ''}" style="cursor:pointer" onclick="ouvrirConversation(${c.id})">
+        <div>
+          <strong>${escapeHtml(c.client_nom)}</strong>
+          ${c.agent_nom ? `<br><small class="text-muted">Agent: ${escapeHtml(c.agent_nom)}</small>` : '<br><small class="text-muted">Non assigné</small>'}
+          ${c.dernier_message ? `<br><small class="text-muted">${escapeHtml(c.dernier_message.contenu)}</small>` : ''}
+        </div>
+        <span class="badge ${c.statut === 'OUVERTE' ? 'bg-warning' : c.statut === 'EN_COURS' ? 'bg-info' : 'bg-secondary'}">${c.statut}</span>
+      </div>
+    `).join('');
+  } catch(e) { document.getElementById('conversations-list').innerHTML = '<p class="text-danger p-3 mb-0">Erreur</p>'; }
+}
+
+async function loadAgents() {
+  try {
+    const agents = await API.getAgents();
+    document.getElementById('agents-list').innerHTML = agents.map(a => `
+      <div class="d-flex align-items-center py-1">
+        ${presenceDot(a.is_online)}
+        <span>${escapeHtml(a.nom)}</span>
+        <span class="ms-auto agent-badge ${a.is_online ? 'agent-online' : 'agent-offline'}">${a.is_online ? 'En ligne' : a.last_seen ? 'Vu le ' + formatDate(a.last_seen) : 'Hors ligne'}</span>
+      </div>
+    `).join('');
+  } catch(e) {}
+}
+
+async function nouvelleConversation() {
+  if (!confirm('Ouvrir une nouvelle conversation ?')) return;
+  try {
+    await API.createConversation();
+    loadConversations();
+  } catch(e) { alert('Erreur: ' + e.message); }
+}
+
+function ouvrirConversation(id) {
+  currentConvId = id;
+  if (chatWs) chatWs.close();
+  document.getElementById('chat-header').textContent = `Conversation #${id}`;
+  document.getElementById('chat-input').disabled = false;
+  document.getElementById('chat-send').disabled = false;
+  loadMessages(id);
+  chatWs = API.connectChat(id,
+    (data) => { ajouterMessage(data); },
+    (data) => {
+      const el = document.getElementById('typing-indicator');
+      if (data.type === 'typing') el.textContent = data.user + ' est en train d\'écrire...';
+      else el.textContent = '';
+    },
+    (data) => { loadAgents(); }
+  );
+  loadConversations();
+}
+
+async function loadMessages(id) {
+  try {
+    const msgs = await API.getMessages(id);
+    const container = document.getElementById('chat-messages');
+    const user = API.getUser();
+    container.innerHTML = msgs.map(m => `
+      <div class="chat-msg ${m.auteur === user.id ? 'sent' : 'received'}">
+        <strong class="d-block" style="font-size:12px">${escapeHtml(m.auteur_nom)}</strong>
+        ${escapeHtml(m.contenu)}
+        <span class="time">${formatDateTime(m.timestamp)}</span>
+      </div>
+    `).join('');
+    container.scrollTop = container.scrollHeight;
+    container.innerHTML += '<div class="typing-indicator" id="typing-indicator"></div>';
+  } catch(e) { document.getElementById('chat-messages').innerHTML = '<p class="text-danger">Erreur</p>'; }
+}
+
+function ajouterMessage(data) {
+  if (!data.contenu) return;
+  const container = document.getElementById('chat-messages');
+  const user = API.getUser();
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + (data.auteur === user.id ? 'sent' : 'received');
+  div.innerHTML = `<strong class="d-block" style="font-size:12px">${escapeHtml(data.auteur_nom)}</strong>${escapeHtml(data.contenu)}<span class="time">${formatDateTime(data.timestamp)}</span>`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text || !chatWs) return;
+  API.sendChatMessage(chatWs, text);
+  input.value = '';
+}
+
+document.getElementById('chat-send').addEventListener('click', sendMessage);
+document.getElementById('chat-input').addEventListener('keypress', function(e) {
+  if (e.key === 'Enter') { sendMessage(); return; }
+  if (typingTimeout) clearTimeout(typingTimeout);
+  API.sendTyping(chatWs, currentConvId);
+  typingTimeout = setTimeout(() => { API.sendStopTyping(chatWs, currentConvId); }, 2000);
+});
+
+loadConversations();
+loadAgents();
+</script>
+{% endblock %}

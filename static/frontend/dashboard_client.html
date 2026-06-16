@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tableau de bord — COFINANCE CI</title>
+  <link rel="stylesheet" href="css/style.css">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+</head>
+<body>
+  <div class="app-layout">
+    <button class="hamburger" id="hamburger">&#9776;</button>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand"><h2>COFINANCE CI</h2><span>Espace Client</span></div>
+      <nav class="sidebar-nav">
+        <a href="dashboard_client.html" class="active"><span class="icon">&#9673;</span> Tableau de bord</a>
+        <a href="credits.html"><span class="icon">&#9733;</span> Mes Crédits</a>
+        <a href="remboursements.html"><span class="icon">&#8635;</span> Remboursements</a>
+        <a href="assurances.html"><span class="icon">&#9724;</span> Assurances</a>
+        <a href="notifications.html"><span class="icon">&#9881;</span> Notifications <span class="badge" id="notif-badge" style="display:none;">0</span></a>
+        <a href="chat.html"><span class="icon">&#9993;</span> Chat</a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <div class="avatar" id="sidebar-avatar">C</div>
+          <div class="user-details"><div class="user-name" id="sidebar-name">Client</div><div class="user-role">Client</div></div>
+        </div>
+        <button class="logout-btn" onclick="logout()">&#8678; Déconnexion</button>
+      </div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header">
+        <div><h1>Tableau de bord</h1><p class="subtitle">Bienvenue, <span id="welcome-name">Client</span></p></div>
+        <a href="credits.html" class="btn btn-accent">+ Nouvelle demande</a>
+      </div>
+      <div class="page-body">
+        <div class="kpi-grid" id="kpi-container">
+          <div class="kpi-card"><div class="kpi-icon">&#9733;</div><div class="kpi-value" id="kpi-total-demandes">0</div><div class="kpi-label">Total demandes</div></div>
+          <div class="kpi-card"><div class="kpi-icon">&#128197;</div><div class="kpi-value" id="kpi-credits-actifs">0</div><div class="kpi-label">Crédits actifs</div></div>
+          <div class="kpi-card"><div class="kpi-icon">&#9724;</div><div class="kpi-value" id="kpi-polices-actives">0</div><div class="kpi-label">Polices actives</div></div>
+          <div class="kpi-card"><div class="kpi-icon">&#128176;</div><div class="kpi-value" id="kpi-montant-total">0 FCFA</div><div class="kpi-label">Total crédits accordés</div></div>
+        </div>
+        <div class="card"><div class="card-header"><h3>Dernières demandes de crédit</h3><a href="credits.html" class="btn btn-sm btn-outline">Voir tout</a></div><div class="card-body"><div id="credits-list"><div class="loading-spinner"><div class="spinner"></div></div></div></div></div>
+        <div class="card mt-4"><div class="card-header"><h3>Mes polices d'assurance</h3><a href="assurances.html" class="btn btn-sm btn-outline">Voir tout</a></div><div class="card-body"><div id="assurances-list"><div class="loading-spinner"><div class="spinner"></div></div></div></div></div>
+      </div>
+    </main>
+  </div>
+  <script src="js/auth.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/utils.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', async function () {
+      checkAuth();
+      const name = getUserName();
+      document.getElementById('sidebar-avatar').textContent = name.charAt(0).toUpperCase();
+      document.getElementById('sidebar-name').textContent = name;
+      document.getElementById('welcome-name').textContent = name;
+      await Promise.all([loadCredits(), loadAssurances(), loadNotifBadge()]);
+    });
+    async function loadCredits() {
+      try {
+        const credits = await apiGet('/api/credits/');
+        const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+        setText('kpi-total-demandes', credits.length);
+        setText('kpi-credits-actifs', credits.filter(c => c.statut === 'APPROUVEE' || c.statut === 'DECAISSEE').length);
+        setText('kpi-montant-total', formatCurrency(credits.filter(c => c.statut === 'DECAISSEE').reduce((s, c) => s + (c.montant || 0), 0)));
+        setText('kpi-prochaine-echeance', credits.find(c => c.statut === 'EN_ATTENTE') ? formatDate(credits.find(c => c.statut === 'EN_ATTENTE').date_echeance) : 'Aucune');
+        const list = document.getElementById('credits-list');
+        if (!credits.length) { list.innerHTML = '<div class="empty-state"><div class="icon">&#9733;</div><h3>Aucune demande</h3><p>Vous n\'avez pas encore fait de demande.</p><a href="credits.html" class="btn btn-primary">Faire une demande</a></div>'; return; }
+        list.innerHTML = '<div class="table-container"><table><thead><tr><th>Montant</th><th>Motif</th><th>Date</th><th>Statut</th></tr></thead><tbody>' +
+          credits.slice(0, 5).map(c => `<tr><td><strong>${formatCurrency(c.montant)}</strong></td><td>${sanitize(c.motif || '-')}</td><td>${formatDate(c.date_soumission || c.created_at)}</td><td><span class="statut ${statutClass(c.statut)}">${statutLabel(c.statut)}</span></td></tr>`).join('') +
+          '</tbody></table></div>';
+      } catch (e) { document.getElementById('credits-list').innerHTML = `<div class="alert alert-danger">Erreur: ${sanitize(e.message)}</div>`; }
+    }
+    async function loadAssurances() {
+      try {
+        const polices = await apiGet('/api/assurances/mes-polices/');
+        document.getElementById('kpi-polices-actives').textContent = polices.filter(p => p.statut === 'ACTIVE').length;
+        const list = document.getElementById('assurances-list');
+        if (!polices.length) { list.innerHTML = '<div class="text-center text-muted" style="padding:20px;">Aucune police d\'assurance souscrite.</div>'; return; }
+        list.innerHTML = '<div class="table-container"><table><thead><tr><th>Formule</th><th>Date début</th><th>Date fin</th><th>Statut</th></tr></thead><tbody>' +
+          polices.map(p => `<tr><td>${sanitize(p.formule_nom || p.formule || '-')}</td><td>${formatDate(p.date_debut)}</td><td>${formatDate(p.date_fin)}</td><td><span class="statut ${statutClass(p.statut)}">${statutLabel(p.statut)}</span></td></tr>`).join('') +
+          '</tbody></table></div>';
+      } catch (e) { document.getElementById('assurances-list').innerHTML = `<div class="alert alert-danger">Erreur: ${sanitize(e.message)}</div>`; }
+    }
+    async function loadNotifBadge() {
+      try {
+        const notifs = await apiGet('/api/notifications/');
+        const unread = notifs.filter(n => !n.lue).length;
+        const badge = document.getElementById('notif-badge');
+        if (unread > 0) { badge.textContent = unread > 99 ? '99+' : unread; badge.style.display = 'inline'; }
+      } catch (e) {}
+    }
+  </script>
+</body>
+</html>

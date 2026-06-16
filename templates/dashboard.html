@@ -1,0 +1,59 @@
+{% extends 'base.html' %}{% load static %}
+{% block title %}Tableau de bord{% endblock %}
+{% block page_title %}Tableau de bord{% endblock %}
+{% block content %}
+{% with active='dashboard' %}{% endwith %}
+<div class="row g-3 mb-4" id="stats-row">
+  <div class="col-6 col-md-3"><div class="card stat-card"><div class="icon text-primary"><i class="bi bi-cash-stack"></i></div><div class="value" id="stat-credits">-</div><div class="label">Crédits</div></div></div>
+  <div class="col-6 col-md-3"><div class="card stat-card"><div class="icon text-success"><i class="bi bi-check-circle"></i></div><div class="value" id="stat-approuves">-</div><div class="label">Approuvés</div></div></div>
+  <div class="col-6 col-md-3"><div class="card stat-card"><div class="icon text-warning"><i class="bi bi-shield"></i></div><div class="value" id="stat-assurances">-</div><div class="label">Assurances actives</div></div></div>
+  <div class="col-6 col-md-3"><div class="card stat-card"><div class="icon text-info"><i class="bi bi-chat-dots"></i></div><div class="value" id="stat-notifs">-</div><div class="label">Notifications</div></div></div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card"><div class="card-header">Mes crédits <a href="/credits/" class="btn btn-sm btn-outline-primary float-end">Voir tout</a></div>
+      <div class="card-body" id="credits-list"><p class="text-muted">Chargement...</p></div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card"><div class="card-header">Mes assurances <a href="/assurances/" class="btn btn-sm btn-outline-primary float-end">Voir tout</a></div>
+      <div class="card-body" id="assurances-list"><p class="text-muted">Chargement...</p></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(async function() {
+  const user = API.getUser();
+  try {
+    const credits = await API.getCredits();
+    document.getElementById('stat-credits').textContent = credits.length;
+    document.getElementById('stat-approuves').textContent = credits.filter(c => c.statut === 'APPROUVEE' || c.statut === 'DECAISSEE').length;
+    const html = credits.slice(0, 5).map(c => `
+      <div class="d-flex justify-content-between align-items-center border-bottom py-2">
+        <div><strong>${formatMoney(c.montant)}</strong><br><small class="text-muted">${formatDate(c.date_soumission)}</small></div>
+        <div>${statutBadge(c.statut)}</div>
+      </div>
+    `).join('');
+    document.getElementById('credits-list').innerHTML = credits.length ? html : '<p class="text-muted mb-0">Aucun crédit</p>';
+  } catch(e) { document.getElementById('credits-list').innerHTML = '<p class="text-danger">Erreur de chargement</p>'; }
+  try {
+    const assurances = await API.getMesPolices();
+    document.getElementById('stat-assurances').textContent = assurances.filter(a => a.statut === 'ACTIVE').length;
+    const html = assurances.slice(0, 5).map(a => `
+      <div class="d-flex justify-content-between align-items-center border-bottom py-2">
+        <div><strong>${escapeHtml(a.formule_nom)}</strong><br><small class="text-muted">${formatDate(a.date_debut)} → ${formatDate(a.date_fin)}</small></div>
+        <div>${statutBadge(a.statut)}</div>
+      </div>
+    `).join('');
+    document.getElementById('assurances-list').innerHTML = assurances.length ? html : '<p class="text-muted mb-0">Aucune souscription</p>';
+  } catch(e) { document.getElementById('assurances-list').innerHTML = '<p class="text-danger">Erreur de chargement</p>'; }
+  try {
+    const notifs = await API.getNotifications();
+    document.getElementById('stat-notifs').textContent = notifs.filter(n => !n.lu).length;
+  } catch(e) {}
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,191 @@
+{% extends 'base.html' %}{% load static %}
+{% block title %}Crédits{% endblock %}
+{% block page_title %}Gestion des crédits{% endblock %}
+{% block content %}
+{% with active='credits' %}{% endwith %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div class="btn-group">
+    <button class="btn btn-outline-primary btn-sm active" data-filter="all" onclick="filterCredits('all')">Tous</button>
+    <button class="btn btn-outline-primary btn-sm" data-filter="SOUMISE" onclick="filterCredits('SOUMISE')">Soumis</button>
+    <button class="btn btn-outline-primary btn-sm" data-filter="APPROUVEE" onclick="filterCredits('APPROUVEE')">Approuvés</button>
+    <button class="btn btn-outline-primary btn-sm" data-filter="EN_ANALYSE" onclick="filterCredits('EN_ANALYSE')">En analyse</button>
+  </div>
+  <button class="btn btn-primary" onclick="showCreateModal()"><i class="bi bi-plus-lg"></i> Nouveau crédit</button>
+</div>
+
+<div class="card"><div class="card-body" id="credits-table"><p class="text-muted">Chargement...</p></div></div>
+
+<!-- Create Modal -->
+<div class="modal fade" id="creditModal"><div class="modal-dialog"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title">Nouvelle demande de crédit</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <form id="credit-form">
+    <div class="modal-body">
+      <div class="alert alert-danger d-none" id="credit-error"></div>
+      <div class="mb-3"><label class="form-label">Montant (FCFA)</label><input type="number" class="form-control" id="c-montant" min="1" required></div>
+      <div class="mb-3"><label class="form-label">Durée (mois)</label><input type="number" class="form-control" id="c-duree" min="1" max="60" required></div>
+      <div class="mb-3"><label class="form-label">Taux d'intérêt (%)</label><input type="number" step="0.01" class="form-control" id="c-taux" value="5.00"></div>
+      <div class="mb-3"><label class="form-label">Motif</label><textarea class="form-control" id="c-motif" rows="3" required></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+      <button type="submit" class="btn btn-primary" id="credit-submit-btn">Soumettre</button>
+    </div>
+  </form>
+</div></div></div>
+
+<!-- Detail Modal -->
+<div class="modal fade" id="detailModal"><div class="modal-dialog modal-lg"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title">Détail du crédit</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body" id="detail-body"></div>
+</div></div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+let allCredits = [];
+
+async function loadCredits() {
+  try {
+    allCredits = await API.getCredits();
+    renderCredits(allCredits);
+  } catch(e) { document.getElementById('credits-table').innerHTML = '<p class="text-danger">Erreur: ' + e.message + '</p>'; }
+}
+
+function renderCredits(credits) {
+  const table = document.getElementById('credits-table');
+  if (!credits.length) { table.innerHTML = '<p class="text-muted mb-0">Aucun crédit</p>'; return; }
+  const user = API.getUser();
+  let html = `<div class="table-responsive"><table class="table table-hover"><thead><tr>
+    <th>ID</th><th>Montant</th><th>Durée</th><th>Intérêts</th><th>Score</th><th>Statut</th><th>Date</th><th>Actions</th>
+  </tr></thead><tbody>`;
+  credits.forEach(c => {
+    html += `<tr>
+      <td>${c.id}</td>
+      <td>${formatMoney(c.montant)}</td>
+      <td>${c.duree_mois} mois</td>
+      <td>${formatMoney(c.interets_totaux)}</td>
+      <td><span class="badge ${c.score_eligibilite >= 70 ? 'bg-success' : c.score_eligibilite >= 40 ? 'bg-warning text-dark' : 'bg-danger'}">${c.score_eligibilite}/100</span></td>
+      <td>${statutBadge(c.statut)}</td>
+      <td>${formatDate(c.date_soumission)}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-info" onclick="showDetail(${c.id})"><i class="bi bi-eye"></i></button>
+        ${(user.role === 'AGENT' || user.role === 'ADMIN') && c.statut !== 'APPROUVEE' && c.statut !== 'DECAISSEE' && c.statut !== 'REJETEE' ? `
+          <button class="btn btn-sm btn-outline-success" onclick="updateStatut(${c.id}, 'APPROUVEE')" title="Approuver"><i class="bi bi-check-lg"></i></button>
+          <button class="btn btn-sm btn-outline-warning" onclick="updateStatut(${c.id}, 'EN_ANALYSE')" title="Mettre en analyse"><i class="bi bi-search"></i></button>
+          <button class="btn btn-sm btn-outline-danger" onclick="updateStatut(${c.id}, 'REJETEE')" title="Rejeter"><i class="bi bi-x-lg"></i></button>
+        ` : ''}
+      </td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  table.innerHTML = html;
+}
+
+function filterCredits(filter) {
+  document.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  const filtered = filter === 'all' ? allCredits : allCredits.filter(c => c.statut === filter);
+  renderCredits(filtered);
+}
+
+function showCreateModal() {
+  document.getElementById('credit-form').reset();
+  document.getElementById('credit-error').classList.add('d-none');
+  new bootstrap.Modal(document.getElementById('creditModal')).show();
+}
+
+document.getElementById('credit-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('credit-submit-btn');
+  btn.disabled = true; btn.textContent = 'Soumission...';
+  try {
+    await API.createCredit({
+      montant: document.getElementById('c-montant').value,
+      duree_mois: document.getElementById('c-duree').value,
+      taux_interet: document.getElementById('c-taux').value,
+      motif: document.getElementById('c-motif').value,
+    });
+    bootstrap.Modal.getInstance(document.getElementById('creditModal')).hide();
+    loadCredits();
+  } catch(err) {
+    const el = document.getElementById('credit-error');
+    el.textContent = err.message; el.classList.remove('d-none');
+  }
+  btn.disabled = false; btn.textContent = 'Soumettre';
+});
+
+async function showDetail(id) {
+  const body = document.getElementById('detail-body');
+  body.innerHTML = '<p class="text-muted">Chargement...</p>';
+  new bootstrap.Modal(document.getElementById('detailModal')).show();
+  try {
+    const c = await API.getCredit(id);
+    const echs = await API.getEcheances(id);
+    body.innerHTML = `
+      <div class="row g-3 mb-4">
+        <div class="col-4"><small class="text-muted">Montant</small><br><strong>${formatMoney(c.montant)}</strong></div>
+        <div class="col-4"><small class="text-muted">Intérêts</small><br><strong>${formatMoney(c.interets_totaux)}</strong></div>
+        <div class="col-4"><small class="text-muted">Taux</small><br><strong>${c.taux_interet}%</strong></div>
+        <div class="col-4"><small class="text-muted">Durée</small><br><strong>${c.duree_mois} mois</strong></div>
+        <div class="col-4"><small class="text-muted">Score</small><br><strong>${c.score_eligibilite}/100</strong></div>
+        <div class="col-4"><small class="text-muted">Statut</small><br>${statutBadge(c.statut)}</div>
+        <div class="col-6"><small class="text-muted">Client</small><br><strong>${escapeHtml(c.client_nom)}</strong></div>
+        <div class="col-6"><small class="text-muted">Agent</small><br><strong>${c.agent_nom || 'Non assigné'}</strong></div>
+        <div class="col-12"><small class="text-muted">Motif</small><br>${escapeHtml(c.motif)}</div>
+      </div>
+      <h6 class="fw-bold">Échéancier</h6>
+      ${echs.length ? `<div class="table-responsive"><table class="table table-sm"><thead><tr><th>Date</th><th>Montant dû</th><th>Payé</th><th>Pénalité</th><th>Jours retard</th><th>Total à payer</th><th>Statut</th></tr></thead><tbody>
+        ${echs.map(e => `<tr>
+          <td>${formatDate(e.date_echeance)}</td>
+          <td>${formatMoney(e.montant_du)}</td>
+          <td>${formatMoney(e.montant_paye)}</td>
+          <td>${formatMoney(e.penalite)}</td>
+          <td>${e.jours_retard}</td>
+          <td>${formatMoney(e.total_a_payer)}</td>
+          <td>${statutBadge(e.statut)}</td>
+        </tr>`).join('')}
+      </tbody></table></div>` : '<p class="text-muted">Aucune échéance</p>'}
+      ${API.getUser().role === 'AGENT' || API.getUser().role === 'ADMIN' ? `
+        <hr><h6>Enregistrer un paiement</h6>
+        <form id="paiement-form-${c.id}" onsubmit="return enregistrerPaiement(event, ${c.id})">
+          <div class="row g-2">
+            <div class="col-4"><select class="form-select" id="paiement-echeance-${c.id}" required>
+              ${echs.filter(e => e.statut !== 'PAYEE').map(e => `<option value="${e.id}">Échéance ${formatDate(e.date_echeance)} — ${formatMoney(e.montant_restant)} restant</option>`).join('')}
+            </select></div>
+            <div class="col-3"><input type="number" class="form-control" id="paiement-montant-${c.id}" placeholder="Montant" required></div>
+            <div class="col-3"><select class="form-select" id="paiement-mode-${c.id}">
+              <option value="ORANGE_MONEY">Orange Money</option><option value="MTN_MOMO">MTN MoMo</option>
+              <option value="WAVE">Wave</option><option value="ESPECES">Espèces</option>
+            </select></div>
+            <div class="col-2"><button type="submit" class="btn btn-success btn-sm">Payer</button></div>
+          </div>
+        </form>
+      ` : ''}
+    `;
+  } catch(e) { body.innerHTML = '<p class="text-danger">Erreur: ' + e.message + '</p>'; }
+}
+
+async function updateStatut(id, statut) {
+  if (!confirm(`Confirmer le passage au statut "${statut}" ?`)) return;
+  try {
+    await API.updateCreditStatus(id, { statut });
+    loadCredits();
+  } catch(e) { alert('Erreur: ' + e.message); }
+}
+
+async function enregistrerPaiement(e, creditId) {
+  e.preventDefault();
+  try {
+    await API.createPaiement({
+      echeance: document.getElementById(`paiement-echeance-${creditId}`).value,
+      montant: document.getElementById(`paiement-montant-${creditId}`).value,
+      mode_paiement: document.getElementById(`paiement-mode-${creditId}`).value,
+    });
+    alert('Paiement enregistré !');
+    showDetail(creditId);
+  } catch(err) { alert('Erreur: ' + err.message); }
+  return false;
+}
+
+loadCredits();
+</script>
+{% endblock %}

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inscription — COFINANCE CI</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="auth-page">
+  <div class="auth-card">
+    <div class="logo">
+      <h1>COFINANCE CI</h1>
+      <p>Créer votre compte client</p>
+    </div>
+    <h2>Inscription</h2>
+    <div id="error-container"></div>
+    <form id="register-form" autocomplete="off">
+      <div class="form-group">
+        <label for="username">Nom d'utilisateur</label>
+        <input type="text" id="username" name="username" placeholder="Votre nom d'utilisateur" required>
+        <div class="error-text"></div>
+      </div>
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" placeholder="votre@email.com" required>
+        <div class="error-text"></div>
+      </div>
+      <div class="form-group">
+        <label for="phone">Téléphone</label>
+        <input type="tel" id="phone" name="phone" placeholder="+225 XX XX XX XX" required>
+        <div class="error-text"></div>
+      </div>
+      <div class="form-group">
+        <label for="region">Région</label>
+        <select id="region" name="region" required>
+          <option value="">Sélectionnez votre région</option>
+          <option value="Abidjan">Abidjan</option>
+          <option value="Bouaké">Bouaké</option>
+          <option value="Daloa">Daloa</option>
+          <option value="Korhogo">Korhogo</option>
+          <option value="Yamoussoukro">Yamoussoukro</option>
+          <option value="San-Pédro">San-Pédro</option>
+          <option value="Gagnoa">Gagnoa</option>
+          <option value="Man">Man</option>
+          <option value="Autre">Autre</option>
+        </select>
+        <div class="error-text"></div>
+      </div>
+      <div class="form-group">
+        <label for="password">Mot de passe</label>
+        <input type="password" id="password" name="password" placeholder="Minimum 8 caractères" required minlength="8">
+        <div class="error-text"></div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block btn-lg" id="register-btn">Créer mon compte</button>
+    </form>
+    <div class="text-center mt-4">
+      <p class="text-muted" style="font-size:0.85rem;">Déjà inscrit ? <a href="index.html">Se connecter</a></p>
+    </div>
+  </div>
+  <script src="js/auth.js"></script>
+  <script src="js/utils.js"></script>
+  <script>
+    document.getElementById('register-form').addEventListener('submit', async function (e) {
+      e.preventDefault(); clearErrors();
+      const btn = document.getElementById('register-btn');
+      btn.disabled = true; btn.innerHTML = '<span class="loading-inline"><span class="spinner-small"></span> Inscription...</span>';
+      try {
+        await register({
+          username: document.getElementById('username').value.trim(),
+          email: document.getElementById('email').value.trim(),
+          phone: document.getElementById('phone').value.trim(),
+          region: document.getElementById('region').value,
+          password: document.getElementById('password').value,
+        });
+        showToast('Compte créé avec succès !', 'success');
+        setTimeout(() => window.location.href = 'index.html', 1500);
+      } catch (error) {
+        document.getElementById('error-container').innerHTML = `<div class="alert alert-danger">${sanitize(error.message)}</div>`;
+        btn.disabled = false; btn.textContent = 'Créer mon compte';
+      }
+    });
+  </script>
+</body>
+</html>

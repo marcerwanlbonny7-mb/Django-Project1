@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Administration — COFINANCE CI</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <button class="hamburger" id="hamburger">&#9776;</button>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand"><h2>COFINANCE CI</h2><span>Administration</span></div>
+      <nav class="sidebar-nav">
+        <a href="dashboard_admin.html" class="active"><span class="icon">&#9673;</span> Tableau de bord</a>
+        <a href="credits.html"><span class="icon">&#9733;</span> Demandes</a>
+        <a href="remboursements.html"><span class="icon">&#8635;</span> Remboursements</a>
+        <a href="assurances.html"><span class="icon">&#9724;</span> Assurances</a>
+        <a href="notifications.html"><span class="icon">&#9881;</span> Notifications <span class="badge" id="notif-badge" style="display:none;">0</span></a>
+        <a href="chat.html"><span class="icon">&#9993;</span> Conversations</a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <div class="avatar" id="sidebar-avatar">A</div>
+          <div class="user-details"><div class="user-name" id="sidebar-name">Admin</div><div class="user-role" id="sidebar-role">Administrateur</div></div>
+        </div>
+        <button class="logout-btn" onclick="logout()">&#8678; Déconnexion</button>
+      </div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header"><div><h1>Tableau de bord</h1><p class="subtitle">Vue d'ensemble des opérations</p></div><span class="text-muted" style="font-size:0.85rem;" id="header-role">Administrateur</span></div>
+      <div class="page-body">
+        <div class="filters-bar">
+          <div class="form-group"><label for="filter-date-debut">Date début</label><input type="date" id="filter-date-debut"></div>
+          <div class="form-group"><label for="filter-date-fin">Date fin</label><input type="date" id="filter-date-fin"></div>
+          <div class="form-group"><label for="filter-region">Région</label><select id="filter-region"><option value="">Toutes</option><option value="Abidjan">Abidjan</option><option value="Bouaké">Bouaké</option><option value="Daloa">Daloa</option><option value="Korhogo">Korhogo</option><option value="Yamoussoukro">Yamoussoukro</option><option value="San-Pédro">San-Pédro</option><option value="Gagnoa">Gagnoa</option><option value="Man">Man</option></select></div>
+          <button class="btn btn-primary btn-sm" onclick="loadDashboard()">Appliquer</button>
+          <button class="btn btn-sm btn-outline" onclick="resetFilters()">Réinitialiser</button>
+        </div>
+        <div class="kpi-grid" id="kpi-container"><div class="loading-spinner" style="grid-column:1/-1;"><div class="spinner"></div></div></div>
+        <div class="grid-2">
+          <div class="chart-container"><h3>Demandes par statut</h3><canvas id="statutChart" height="250"></canvas></div>
+          <div class="chart-container"><h3>Évolution mensuelle</h3><canvas id="evolutionChart" height="250"></canvas></div>
+        </div>
+        <div class="card mt-4"><div class="card-header"><h3>Dernières demandes de crédit</h3><a href="credits.html" class="btn btn-sm btn-outline">Gérer les demandes</a></div><div class="card-body"><div id="latest-credits"><div class="loading-spinner"><div class="spinner"></div></div></div></div></div>
+      </div>
+    </main>
+  </div>
+  <script src="js/auth.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/utils.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', async function () {
+      checkAuth();
+      const name = getUserName(), role = getUserRole();
+      document.getElementById('sidebar-avatar').textContent = name.charAt(0).toUpperCase();
+      document.getElementById('sidebar-name').textContent = name;
+      document.getElementById('sidebar-role').textContent = role === 'ADMIN' ? 'Administrateur' : 'Agent';
+      document.getElementById('header-role').textContent = role === 'ADMIN' ? 'Administrateur' : 'Agent';
+      await Promise.all([loadDashboard(), loadNotifBadge()]);
+    });
+    function resetFilters() { ['filter-date-debut','filter-date-fin'].forEach(id => document.getElementById(id).value = ''); document.getElementById('filter-region').value = ''; loadDashboard(); }
+    async function loadDashboard() {
+      const container = document.getElementById('kpi-container');
+      container.innerHTML = '<div class="loading-spinner" style="grid-column:1/-1;"><div class="spinner"></div></div>';
+      const params = new URLSearchParams();
+      ['filter-date-debut','filter-date-fin','filter-region'].forEach(id => { const v = document.getElementById(id).value; if (v) params.append(id.replace('filter-',''), v); });
+      const qs = params.toString() ? '?' + params.toString() : '';
+      try {
+        const [stats, credits] = await Promise.all([apiGet('/api/dashboard/stats/' + qs).catch(() => ({})), apiGet('/api/credits/').catch(() => [])]);
+        container.innerHTML = `
+          <div class="kpi-card"><div class="kpi-icon">&#9733;</div><div class="kpi-value">${stats.volume_demandes || stats.en_attente || 0}</div><div class="kpi-label">Demandes en attente</div></div>
+          <div class="kpi-card"><div class="kpi-icon">&#128200;</div><div class="kpi-value">${(stats.taux_recouvrement || 0).toFixed(1)}%</div><div class="kpi-label">Taux de recouvrement</div></div>
+          <div class="kpi-card"><div class="kpi-icon">&#9724;</div><div class="kpi-value">${stats.souscriptions_actives || 0}</div><div class="kpi-label">Souscriptions actives</div></div>
+          <div class="kpi-card"><div class="kpi-icon">&#9993;</div><div class="kpi-value">${stats.conversations_ouvertes || 0}</div><div class="kpi-label">Conversations ouvertes</div></div>`;
+        renderChart(credits); renderLatestCredits(credits);
+      } catch (e) { container.innerHTML = `<div class="alert alert-danger" style="grid-column:1/-1;">${sanitize(e.message)}</div>`; }
+    }
+    function renderChart(credits) {
+      const canvas = document.getElementById('statutChart'); if (!canvas) return;
+      const ctx = canvas.getContext('2d'); const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect(); canvas.width = rect.width * dpr; canvas.height = 250 * dpr; ctx.scale(dpr, dpr);
+      const w = rect.width, h = 250;
+      const statuts = ['SOUMISE','EN_ANALYSE','APPROUVEE','DECAISSEE','REJETEE'];
+      const labels = ['Soumise','En analyse','Approuvée','Décaissée','Rejetée'];
+      const colors = ['#9e9e9e','#F57F17','#1565C0','#2E7D32','#C62828'];
+      const counts = statuts.map(s => credits.filter(c => c.statut === s).length);
+      const maxVal = Math.max(...counts, 1); const barWidth = Math.max((w - 80) / statuts.length - 10, 20);
+      ctx.clearRect(0, 0, w, h);
+      counts.forEach((count, i) => {
+        const x = 40 + i * (barWidth + 14); const barH = (count / maxVal) * (h - 80); const y = h - 40 - barH;
+        ctx.fillStyle = colors[i]; ctx.beginPath();
+        ctx.roundRect ? ctx.roundRect(x, y, barWidth, barH, [4,4,0,0]) : ctx.rect(x, y, barWidth, barH);
+        ctx.fill();
+        ctx.fillStyle = '#424242'; ctx.font = 'bold 12px Inter, sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(count, x + barWidth / 2, y - 6);
+        ctx.fillStyle = '#616161'; ctx.font = '10px Inter, sans-serif';
+        ctx.fillText(labels[i], x + barWidth / 2, h - 16);
+      });
+    }
+    function renderLatestCredits(credits) {
+      const container = document.getElementById('latest-credits');
+      const last10 = credits.slice(0, 10);
+      if (!last10.length) { container.innerHTML = '<div class="empty-state"><div class="icon">&#9733;</div><h3>Aucune demande</h3></div>'; return; }
+      container.innerHTML = '<div class="table-container"><table><thead><tr><th>Client</th><th>Montant</th><th>Motif</th><th>Date</th><th>Statut</th><th>Action</th></tr></thead><tbody>' +
+        last10.map(c => `<tr><td>${sanitize(c.client_nom || c.client_username || c.client || '-')}</td><td><strong>${formatCurrency(c.montant)}</strong></td><td class="truncate" style="max-width:150px;">${sanitize(c.motif || '-')}</td><td>${formatDate(c.date_soumission || c.created_at)}</td><td><span class="statut ${statutClass(c.statut)}">${statutLabel(c.statut)}</span></td><td><button class="btn btn-sm btn-outline" onclick="changerStatut(${c.id})">Changer</button></td></tr>`).join('') +
+        '</tbody></table></div>';
+    }
+    async function changerStatut(creditId) {
+      const statuts = ['EN_ANALYSE','APPROUVEE','DECAISSEE','REJETEE'];
+      const nouveau = prompt('Nouveau statut (EN_ANALYSE, APPROUVEE, DECAISSEE, REJETEE) :');
+      if (!nouveau || !statuts.includes(nouveau)) { showToast('Statut invalide', 'error'); return; }
+      try { await apiPatch(`/api/credits/${creditId}/statut/`, { statut: nouveau }); showToast('Statut mis à jour', 'success'); loadDashboard(); } catch (e) { showToast('Erreur: ' + e.message, 'error'); }
+    }
+    async function loadNotifBadge() {
+      try {
+        const notifs = await apiGet('/api/notifications/');
+        const unread = notifs.filter(n => !n.lue).length;
+        const badge = document.getElementById('notif-badge');
+        if (unread > 0) { badge.textContent = unread > 99 ? '99+' : unread; badge.style.display = 'inline'; }
+      } catch (e) {}
+    }
+  </script>
+</body>
+</html>

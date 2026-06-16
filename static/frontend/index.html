@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connexion — COFINANCE CI</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="auth-page">
+  <div class="auth-card">
+    <div class="logo">
+      <h1>COFINANCE CI</h1>
+      <p>Microfinance de confiance</p>
+    </div>
+    <h2>Connexion</h2>
+    <div id="error-container"></div>
+    <form id="login-form" autocomplete="off">
+      <div class="form-group">
+        <label for="username">Nom d'utilisateur</label>
+        <input type="text" id="username" name="username" placeholder="Entrez votre nom d'utilisateur" required autocomplete="username">
+        <div class="error-text"></div>
+      </div>
+      <div class="form-group">
+        <label for="password">Mot de passe</label>
+        <input type="password" id="password" name="password" placeholder="Entrez votre mot de passe" required autocomplete="current-password">
+        <div class="error-text"></div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block btn-lg" id="login-btn">Se connecter</button>
+    </form>
+    <div class="text-center mt-4">
+      <p class="text-muted" style="font-size:0.85rem;">
+        Pas encore de compte ? <a href="register.html">S'inscrire</a>
+      </p>
+    </div>
+    <div class="text-center mt-2">
+      <small class="text-muted">Démo: <code>admin</code> / <code>admin123</code></small>
+    </div>
+  </div>
+
+  <script src="js/auth.js"></script>
+  <script src="js/utils.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      if (getToken()) {
+        const role = getUserRole();
+        if (role) redirectByRole(role);
+      }
+      document.getElementById('login-form').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        clearErrors();
+        const btn = document.getElementById('login-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="loading-inline"><span class="spinner-small"></span> Connexion...</span>';
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value;
+        if (!username || !password) {
+          if (!username) showFieldError('username', 'Veuillez entrer votre nom d\'utilisateur');
+          if (!password) showFieldError('password', 'Veuillez entrer votre mot de passe');
+          btn.disabled = false; btn.textContent = 'Se connecter';
+          return;
+        }
+        try {
+          await login(username, password);
+          redirectByRole(getUserRole());
+        } catch (error) {
+          document.getElementById('error-container').innerHTML =
+            `<div class="alert alert-danger">${sanitize(error.message)}</div>`;
+          btn.disabled = false; btn.textContent = 'Se connecter';
+        }
+      });
+    });
+  </script>
+</body>
+</html>

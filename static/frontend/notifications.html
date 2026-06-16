@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notifications — COFINANCE CI</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <button class="hamburger" id="hamburger">&#9776;</button>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand"><h2>COFINANCE CI</h2><span>Notifications</span></div>
+      <nav class="sidebar-nav" id="sidebar-nav"></nav>
+      <div class="sidebar-footer">
+        <div class="user-info"><div class="avatar" id="sidebar-avatar">C</div><div class="user-details"><div class="user-name" id="sidebar-name">Utilisateur</div><div class="user-role" id="sidebar-role">Client</div></div></div>
+        <button class="logout-btn" onclick="logout()">&#8678; Déconnexion</button>
+      </div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header"><div><h1>Notifications</h1><p class="subtitle">Centre de notifications</p></div><button class="btn btn-outline btn-sm" onclick="marquerToutLu()">Tout marquer comme lu</button></div>
+      <div class="page-body"><div id="notifications-container"><div class="loading-spinner"><div class="spinner"></div></div></div></div>
+    </main>
+  </div>
+  <script src="js/auth.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/utils.js"></script>
+  <script>
+    const clientNav = [{h:'dashboard_client.html',i:'&#9673;',l:'Tableau de bord'},{h:'credits.html',i:'&#9733;',l:'Mes Crédits'},{h:'remboursements.html',i:'&#8635;',l:'Remboursements'},{h:'assurances.html',i:'&#9724;',l:'Assurances'},{h:'notifications.html',i:'&#9881;',l:'Notifications',a:true},{h:'chat.html',i:'&#9993;',l:'Chat'}];
+    const adminNav = [{h:'dashboard_admin.html',i:'&#9673;',l:'Tableau de bord'},{h:'credits.html',i:'&#9733;',l:'Demandes'},{h:'remboursements.html',i:'&#8635;',l:'Remboursements'},{h:'assurances.html',i:'&#9724;',l:'Assurances'},{h:'notifications.html',i:'&#9881;',l:'Notifications',a:true},{h:'chat.html',i:'&#9993;',l:'Conversations'}];
+    const icons = {CREDIT:'&#128179;',REMBOURSEMENT:'&#128176;',ASSURANCE:'&#128737;',CHAT:'&#128172;'};
+    const colors = {CREDIT:'#E3F2FD',REMBOURSEMENT:'#E8F5E9',ASSURANCE:'#FFF8E1',CHAT:'#F3E5F5'};
+
+    document.addEventListener('DOMContentLoaded', async function () {
+      checkAuth(); const role = getUserRole(), isClient = role === 'CLIENT';
+      const name = getUserName(); document.getElementById('sidebar-avatar').textContent = name.charAt(0).toUpperCase();
+      document.getElementById('sidebar-name').textContent = name;
+      document.getElementById('sidebar-role').textContent = isClient ? 'Client' : (role==='ADMIN'?'Administrateur':'Agent');
+      document.getElementById('sidebar-nav').innerHTML = (isClient ? clientNav : adminNav).map(item => `<a href="${item.h}"${item.a?' class="active"':''}><span class="icon">${item.i}</span> ${item.l}</a>`).join('');
+      await loadNotifications();
+    });
+    async function loadNotifications() {
+      const c = document.getElementById('notifications-container'); c.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
+      try {
+        const data = await apiGet('/api/notifications/');
+        const items = Array.isArray(data) ? data : (data.results || data.notifications || []);
+        if (!items.length) { c.innerHTML = '<div class="empty-state"><div class="icon">&#128276;</div><h3>Aucune notification</h3></div>'; return; }
+        c.innerHTML = items.map(n => {
+          const type = n.type || n.categorie || 'CREDIT', icon = icons[type]||'&#128276;', bg = colors[type]||'#f5f5f5';
+          return `<div class="notif-item ${!n.lue?'unread':''}" onclick="marquerLu(${n.id}, this)">
+            <div class="notif-icon" style="background:${bg};">${icon}</div>
+            <div class="notif-content">
+              <div class="notif-title">${sanitize(n.titre||n.sujet||'Notification')}</div>
+              <div class="notif-text">${sanitize(n.message||n.contenu||'')}</div>
+              <div class="notif-time">${formatRelativeTime(n.created_at||n.date_creation||n.timestamp)}</div>
+            </div>${!n.lue?'<div class="notif-unread-dot"></div>':''}
+          </div>`;
+        }).join('');
+      } catch (e) { c.innerHTML = `<div class="alert alert-danger">${sanitize(e.message)}</div>`; }
+    }
+    async function marquerLu(id, el) {
+      try { await apiPatch(`/api/notifications/${id}/lire/`, {}); el.classList.remove('unread'); const dot = el.querySelector('.notif-unread-dot'); if (dot) dot.remove(); } catch (e) { showToast('Erreur: '+e.message, 'error'); }
+    }
+    async function marquerToutLu() {
+      try { await apiPatch('/api/notifications/lire-tout/', {}); document.querySelectorAll('.notif-item.unread').forEach(el => { el.classList.remove('unread'); const dot = el.querySelector('.notif-unread-dot'); if (dot) dot.remove(); }); showToast('Tout marqué comme lu', 'success'); } catch (e) { showToast('Erreur: '+e.message, 'error'); }
+    }
+  </script>
+</body>
+</html>

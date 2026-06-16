@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Assurances — COFINANCE CI</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <button class="hamburger" id="hamburger">&#9776;</button>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand"><h2>COFINANCE CI</h2><span id="sidebar-brand-sub">Assurances</span></div>
+      <nav class="sidebar-nav" id="sidebar-nav"></nav>
+      <div class="sidebar-footer">
+        <div class="user-info"><div class="avatar" id="sidebar-avatar">C</div><div class="user-details"><div class="user-name" id="sidebar-name">Utilisateur</div><div class="user-role" id="sidebar-role">Client</div></div></div>
+        <button class="logout-btn" onclick="logout()">&#8678; Déconnexion</button>
+      </div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header"><div><h1>Assurances</h1><p class="subtitle">Protégez vos crédits et votre famille</p></div></div>
+      <div class="page-body">
+        <div class="tabs"><button class="tab active" onclick="switchTab('catalogue',this)">Catalogue</button><button class="tab" onclick="switchTab('mes-polices',this)">Mes Polices</button></div>
+        <div class="tab-content active" id="tab-catalogue"><div id="catalogue-container"><div class="loading-spinner"><div class="spinner"></div></div></div></div>
+        <div class="tab-content" id="tab-mes-polices"><div id="polices-container"><div class="loading-spinner"><div class="spinner"></div></div></div></div>
+      </div>
+    </main>
+  </div>
+
+  <div class="modal-overlay" id="souscription-modal"><div class="modal"><div class="modal-header"><h3>Souscrire à une assurance</h3><button class="modal-close">&times;</button></div>
+    <form id="souscription-form"><div class="modal-body">
+      <div id="souscription-form-error"></div>
+      <div class="form-group"><label>Formule</label><input type="text" id="souscription-formule" readonly style="background:var(--gray-100);"></div>
+      <div class="form-group"><label for="souscription-debut">Date de début</label><input type="date" id="souscription-debut" required><div class="error-text"></div></div>
+      <div class="form-group"><label for="souscription-fin">Date de fin</label><input type="date" id="souscription-fin" required><div class="error-text"></div></div>
+    </div><div class="modal-footer"><button type="button" class="btn btn-outline" onclick="closeModal('souscription-modal')">Annuler</button><button type="submit" class="btn btn-primary" id="souscription-submit-btn">Souscrire</button></div></form></div></div>
+
+  <div class="modal-overlay" id="resilier-modal"><div class="modal" style="max-width:400px;"><div class="modal-header"><h3>Confirmer la résiliation</h3><button class="modal-close">&times;</button></div>
+    <div class="modal-body"><p style="margin-bottom:16px;">Êtes-vous sûr de vouloir résilier cette police ?</p><div id="resilier-info" style="background:var(--gray-50);padding:12px;border-radius:8px;font-size:0.85rem;"></div></div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline" onclick="closeModal('resilier-modal')">Annuler</button><button type="button" class="btn btn-danger" id="resilier-confirm-btn">Confirmer</button></div></div></div>
+
+  <script src="js/auth.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/utils.js"></script>
+  <script>
+    let isClient = true, selectedFormule = null, selectedPoliceId = null;
+    const clientNav = [{h:'dashboard_client.html',i:'&#9673;',l:'Tableau de bord'},{h:'credits.html',i:'&#9733;',l:'Mes Crédits'},{h:'remboursements.html',i:'&#8635;',l:'Remboursements'},{h:'assurances.html',i:'&#9724;',l:'Assurances',a:true},{h:'notifications.html',i:'&#9881;',l:'Notifications'},{h:'chat.html',i:'&#9993;',l:'Chat'}];
+    const adminNav = [{h:'dashboard_admin.html',i:'&#9673;',l:'Tableau de bord'},{h:'credits.html',i:'&#9733;',l:'Demandes'},{h:'remboursements.html',i:'&#8635;',l:'Remboursements'},{h:'assurances.html',i:'&#9724;',l:'Assurances',a:true},{h:'notifications.html',i:'&#9881;',l:'Notifications'},{h:'chat.html',i:'&#9993;',l:'Conversations'}];
+    document.addEventListener('DOMContentLoaded', async function () {
+      checkAuth(); isClient = getUserRole() === 'CLIENT';
+      const name = getUserName(); document.getElementById('sidebar-avatar').textContent = name.charAt(0).toUpperCase();
+      document.getElementById('sidebar-name').textContent = name;
+      document.getElementById('sidebar-role').textContent = isClient ? 'Client' : (getUserRole()==='ADMIN'?'Administrateur':'Agent');
+      document.getElementById('sidebar-brand-sub').textContent = isClient ? 'Espace Client' : 'Administration';
+      document.getElementById('sidebar-nav').innerHTML = (isClient ? clientNav : adminNav).map(item => `<a href="${item.h}"${item.a?' class="active"':''}><span class="icon">${item.i}</span> ${item.l}</a>`).join('');
+      await Promise.all([loadCatalogue(), loadPolices()]);
+    });
+    function switchTab(tab, btn) { document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active')); btn.classList.add('active'); document.getElementById('tab-'+tab).classList.add('active'); }
+    async function loadCatalogue() {
+      const c = document.getElementById('catalogue-container'); c.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
+      try {
+        const data = await apiGet('/api/assurances/formules/');
+        const items = Array.isArray(data) ? data : (data.formules || data.results || []);
+        if (!items.length) { c.innerHTML = '<div class="empty-state"><div class="icon">&#9724;</div><h3>Aucune formule</h3></div>'; return; }
+        c.innerHTML = '<div class="assurance-grid">' + items.map(f => `
+          <div class="assurance-card">
+            <div class="card-img">${f.icone||'&#9724;'}</div>
+            <div class="card-body">
+              <h4>${sanitize(f.nom||f.libelle||'Formule')}</h4>
+              <p>${sanitize(f.description||'')}</p>
+              <div class="price">${formatCurrency(f.prix_mensuel||f.prix||0)} <span>/ mois</span></div>
+              ${isClient ? `<button class="btn btn-primary btn-block mt-2" onclick="ouvrirSouscription('${sanitize(f.nom||f.libelle||f.id)}', ${f.id})">Souscrire</button>` : ''}
+            </div>
+          </div>`).join('') + '</div>';
+      } catch (e) { c.innerHTML = `<div class="alert alert-danger">${sanitize(e.message)}</div>`; }
+    }
+    async function loadPolices() {
+      const c = document.getElementById('polices-container'); c.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
+      try {
+        const data = await apiGet('/api/assurances/mes-polices/');
+        const items = Array.isArray(data) ? data : (data.polices || data.results || []);
+        if (!items.length) { c.innerHTML = '<div class="empty-state"><div class="icon">&#9724;</div><h3>Aucune police</h3></div>'; return; }
+        c.innerHTML = '<div class="table-container"><table><thead><tr><th>Formule</th><th>Début</th><th>Fin</th><th>Statut</th>'+ (isClient?'<th>Actions</th>':'') +'</tr></thead><tbody>' +
+          items.map(p => `<tr><td><strong>${sanitize(p.formule_nom||p.formule||'-')}</strong></td><td>${formatDate(p.date_debut)}</td><td>${formatDate(p.date_fin)}</td><td><span class="statut ${statutClass(p.statut)}">${statutLabel(p.statut)}</span></td>${isClient?`<td>${p.statut==='ACTIVE'?`<button class="btn btn-sm btn-danger" onclick="ouvrirResiliation(${p.id})">Résilier</button>`:'-'}</td>`:''}</tr>`).join('') + '</tbody></table></div>';
+      } catch (e) { c.innerHTML = `<div class="alert alert-danger">${sanitize(e.message)}</div>`; }
+    }
+    function ouvrirSouscription(nom, id) { selectedFormule = id || nom; document.getElementById('souscription-formule').value = nom; document.getElementById('souscription-form-error').innerHTML = ''; document.getElementById('souscription-debut').value = ''; document.getElementById('souscription-fin').value = ''; openModal('souscription-modal'); }
+    document.getElementById('souscription-form').addEventListener('submit', async function (e) {
+      e.preventDefault(); clearErrors();
+      const debut = document.getElementById('souscription-debut').value, fin = document.getElementById('souscription-fin').value;
+      if (!debut) { showFieldError('souscription-debut', 'Requis'); return; }
+      if (!fin) { showFieldError('souscription-fin', 'Requis'); return; }
+      if (new Date(fin) <= new Date(debut)) { showFieldError('souscription-fin', 'Doit être après la date de début'); return; }
+      const btn = document.getElementById('souscription-submit-btn'); btn.disabled = true; btn.innerHTML = '<span class="loading-inline"><span class="spinner-small"></span>...</span>';
+      try { await apiPost('/api/assurances/souscrire/', { formule: selectedFormule, date_debut: debut, date_fin: fin }); showToast('Souscription réussie !', 'success'); closeModal('souscription-modal'); await Promise.all([loadCatalogue(), loadPolices()]); }
+      catch (e) { document.getElementById('souscription-form-error').innerHTML = `<div class="alert alert-danger">${sanitize(e.message)}</div>`; }
+      finally { btn.disabled = false; btn.textContent = 'Souscrire'; }
+    });
+    function ouvrirResiliation(id) { selectedPoliceId = id; document.getElementById('resilier-info').innerHTML = `<strong>Police N°</strong> ${id}`; openModal('resilier-modal'); }
+    document.getElementById('resilier-confirm-btn').addEventListener('click', async function () {
+      if (!selectedPoliceId) return; const btn = this; btn.disabled = true; btn.innerHTML = '<span class="loading-inline"><span class="spinner-small"></span>...</span>';
+      try { await apiPatch(`/api/assurances/${selectedPoliceId}/resilier/`, {}); showToast('Police résiliée', 'success'); closeModal('resilier-modal'); await loadPolices(); }
+      catch (e) { showToast('Erreur: '+e.message, 'error'); }
+      finally { btn.disabled = false; btn.textContent = 'Confirmer'; }
+    });
+  </script>
+</body>
+</html>
